@@ -1,0 +1,23 @@
+# Inventoried external assets (no binaries committed)
+---
+items:
+  - name: DirectX-Graphics-Samples
+    repo: https://github.com/microsoft/DirectX-Graphics-Samples
+    commit: pending
+    license: MIT
+    notes: Waitable swap chain reference for D3D11 Flip-Discard pacing.
+  - name: Windows-classic-samples
+    repo: https://github.com/microsoft/Windows-classic-samples
+    commit: pending
+    license: MIT
+    notes: WASAPI exclusive mode render example; basis for audio engine.
+  - name: sqlmodel
+    source: https://pypi.org/project/sqlmodel/
+    version: 0.0.14
+    license: MIT
+    notes: ORM powering the preset catalog API; installed via pip.
+  - name: shadcn-ui
+    source: https://ui.shadcn.com/
+    version: 0.8.0
+    license: MIT
+    notes: UI primitives referenced by the frontend skeleton (no assets vendored yet).

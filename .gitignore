@@ -21,6 +21,14 @@ ffmpeg-7.1-full_build/
 downloads/
 ffmpeg-*/
 
+# Frontend build artifacts
+frontend/node_modules/
+frontend/.next/
+frontend/coverage/
+
+# Packaging artifacts
+*.egg-info/
+
 # IDE settings
 .vscode/
 .idea/
