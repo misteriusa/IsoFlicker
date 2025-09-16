@@ -1,0 +1,22 @@
+version: "3.9"
+
+services:
+  backend:
+    build: .
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data:/app/data:ro
+      - ./logs:/app/logs
+    environment:
+      ISOFLICKER_PRESET_FILE: /app/data/presets/default_presets.json
+  frontend:
+    image: node:20-alpine
+    working_dir: /workspace/frontend
+    command: npm run dev
+    volumes:
+      - ./frontend:/workspace/frontend
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_BACKEND_URL: http://localhost:8000

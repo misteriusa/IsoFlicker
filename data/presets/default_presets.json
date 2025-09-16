@@ -1,0 +1,255 @@
+{
+  "version": "2024.04-windows-preview",
+  "categories": {
+    "A": {
+      "label": "Proven (physiology-grade)",
+      "description": "Stimuli with robust entrainment responses in humans or animals. Claims limited to measurable physiology."
+    },
+    "B": {
+      "label": "High-plausibility, low-evidence",
+      "description": "Research prototypes inspired by known mechanisms but lacking direct outcome trials."
+    }
+  },
+  "presets": [
+    {
+      "id": "gamma40",
+      "label": "Gamma 40",
+      "category": "A",
+      "mod_rate_hz": 40.0,
+      "duty_cycle": 0.5,
+      "depth": 1.0,
+      "window_ms": 5.0,
+      "carrier": {
+        "type": "pink-noise",
+        "carrier_hz": null
+      },
+      "duration_minutes": 20,
+      "visual": {
+        "enabled": true,
+        "rate_hz": 40.0,
+        "phase_relation_deg": 0,
+        "precision_note": "Exact at 120 Hz refresh; approx at 60 Hz"
+      },
+      "rationale": "40 Hz auditory steady-state responses are large and reliable biomarkers. Multi-sensory 40 Hz (GENUS) shows microglia/amyloid shifts in AD mouse models; human translation remains early/mixed.",
+      "expected": "Strong 40 Hz ASSR; potential alertness. No clinical claims.",
+      "safety": {
+        "max_volume_pct": 70,
+        "photosensitivity_flag": true,
+        "notes": "Keep comfortable volume; caution for 3-60 Hz visual flicker." 
+      },
+      "citations": [8, 9]
+    },
+    {
+      "id": "assr90",
+      "label": "ASSR 90",
+      "category": "A",
+      "mod_rate_hz": 90.0,
+      "duty_cycle": 0.5,
+      "depth": 0.8,
+      "window_ms": 4.0,
+      "carrier": {
+        "type": "sine",
+        "carrier_hz": 1000.0
+      },
+      "duration_minutes": 5,
+      "visual": {
+        "enabled": false,
+        "rate_hz": null,
+        "phase_relation_deg": null,
+        "precision_note": "Audio-only diagnostic block"
+      },
+      "rationale": "Brainstem-dominant ASSR peaks near 80-95 Hz; excellent for verifying the audio engine and headphone chain.",
+      "expected": "Rough alerting tone for calibration; not relaxing.",
+      "safety": {
+        "max_volume_pct": 60,
+        "photosensitivity_flag": false,
+        "notes": "Short diagnostic bursts recommended." 
+      },
+      "citations": [10]
+    },
+    {
+      "id": "alpha10v",
+      "label": "Alpha 10 Visual",
+      "category": "A",
+      "mod_rate_hz": 10.0,
+      "duty_cycle": 0.5,
+      "depth": 0.7,
+      "window_ms": 6.0,
+      "carrier": {
+        "type": "none",
+        "carrier_hz": null
+      },
+      "duration_minutes": 10,
+      "visual": {
+        "enabled": true,
+        "rate_hz": 10.0,
+        "phase_relation_deg": 0,
+        "precision_note": "Soft contrast to reduce photosensitivity risk"
+      },
+      "rationale": "Visual alpha entrainment modulates periodic sampling and is reliable in EEG/MEG.",
+      "expected": "Visual 10 Hz flicker; restful alpha entrainment.",
+      "safety": {
+        "max_volume_pct": 0,
+        "photosensitivity_flag": true,
+        "notes": "Use soft contrast presets and warn photosensitive users." 
+      },
+      "citations": [11]
+    },
+    {
+      "id": "tg_nest",
+      "label": "Theta-Gamma Nest",
+      "category": "B",
+      "mod_rate_hz": 40.0,
+      "duty_cycle": 0.5,
+      "depth": 1.0,
+      "window_ms": 5.0,
+      "carrier": {
+        "type": "pink-noise",
+        "carrier_hz": null
+      },
+      "outer_envelope": {
+        "mod_rate_hz": 6.0,
+        "depth": 0.6
+      },
+      "duration_minutes": 12,
+      "visual": {
+        "enabled": true,
+        "rate_hz": 40.0,
+        "phase_relation_deg": 0,
+        "precision_note": "Requires 120 Hz display for exact phase alignment"
+      },
+      "rationale": "External theta→gamma nesting attempts to bias cross-frequency coupling seen in memory networks.",
+      "expected": "Strong 40 Hz ASSR plus 6 Hz envelope; subjective focus reports unverified.",
+      "safety": {
+        "max_volume_pct": 65,
+        "photosensitivity_flag": true,
+        "notes": "Ramp in/out for comfort; research mode only." 
+      },
+      "citations": [14]
+    },
+    {
+      "id": "av40_phase",
+      "label": "A/V 40 Phase Study",
+      "category": "B",
+      "mod_rate_hz": 40.0,
+      "duty_cycle": 0.5,
+      "depth": 1.0,
+      "window_ms": 5.0,
+      "carrier": {
+        "type": "pink-noise",
+        "carrier_hz": null
+      },
+      "phase_options_deg": [0, 90, 180],
+      "duration_minutes": 8,
+      "visual": {
+        "enabled": true,
+        "rate_hz": 40.0,
+        "phase_relation_deg": 0,
+        "precision_note": "Phase offsets selectable per block"
+      },
+      "rationale": "Explores phase-steered multi-sensory gamma inspired by mouse GENUS experiments.",
+      "expected": "Phase-dependent coherence/comfort shifts; for counterbalanced research blocks.",
+      "safety": {
+        "max_volume_pct": 60,
+        "photosensitivity_flag": true,
+        "notes": "Encourage breaks between blocks; research-only." 
+      },
+      "citations": [15]
+    },
+    {
+      "id": "alpha10_pre",
+      "label": "Alpha 10 Pre-task",
+      "category": "B",
+      "mod_rate_hz": 10.0,
+      "duty_cycle": 0.5,
+      "depth": 0.6,
+      "window_ms": 6.0,
+      "carrier": {
+        "type": "pink-noise",
+        "carrier_hz": null
+      },
+      "duration_minutes": 12,
+      "visual": {
+        "enabled": false,
+        "rate_hz": null,
+        "phase_relation_deg": null,
+        "precision_note": "Audio pre-task block"
+      },
+      "rationale": "Alpha-range modulation occasionally reduces acute pain/anxiety; evidence mixed and largely from binaural beats.",
+      "expected": "Mildly soothing AM audio; exploratory only.",
+      "safety": {
+        "max_volume_pct": 55,
+        "photosensitivity_flag": false,
+        "notes": "Keep volume low; set expectation that outcomes are uncertain." 
+      },
+      "citations": [16]
+    },
+    {
+      "id": "slow08_open",
+      "label": "Slow 0.8 Open-loop",
+      "category": "B",
+      "mod_rate_hz": 0.8,
+      "duty_cycle": 0.04,
+      "depth": 1.0,
+      "window_ms": 20.0,
+      "carrier": {
+        "type": "pink-noise",
+        "carrier_hz": null
+      },
+      "duration_minutes": 10,
+      "visual": {
+        "enabled": false,
+        "rate_hz": null,
+        "phase_relation_deg": null,
+        "precision_note": "Audio bursts every 1.25 s"
+      },
+      "rationale": "Open-loop slow bursts mimic closed-loop sleep stimulation but lack phase-locking; offered for practice only.",
+      "expected": "Gentle noise bursts; not equivalent to lab closed-loop protocols.",
+      "safety": {
+        "max_volume_pct": 50,
+        "photosensitivity_flag": false,
+        "notes": "Promote low SPL and restful context." 
+      },
+      "citations": [12]
+    },
+    {
+      "id": "sr_assist",
+      "label": "Stochastic Resonance Assist",
+      "category": "B",
+      "mod_rate_hz": null,
+      "duty_cycle": null,
+      "depth": null,
+      "window_ms": null,
+      "carrier": {
+        "type": "add-on",
+        "carrier_hz": null
+      },
+      "duration_minutes": null,
+      "visual": {
+        "enabled": false,
+        "rate_hz": null,
+        "phase_relation_deg": null,
+        "precision_note": "Toggle adds -20 dB band-limited noise"
+      },
+      "rationale": "Adds controlled noise to explore stochastic resonance supporting weak-signal perception.",
+      "expected": "Improved perception of modulation at lower levels for some listeners; evidence limited.",
+      "safety": {
+        "max_volume_pct": 45,
+        "photosensitivity_flag": false,
+        "notes": "Keep noise floor low; optional feature disabled by default." 
+      },
+      "citations": [17]
+    }
+  ],
+  "citations": {
+    "8": "https://pmc.ncbi.nlm.nih.gov/articles/PMC4946051/",
+    "9": "https://pmc.ncbi.nlm.nih.gov/articles/PMC5656389/",
+    "10": "https://pubmed.ncbi.nlm.nih.gov/7759645/",
+    "11": "https://pmc.ncbi.nlm.nih.gov/articles/PMC8483591/",
+    "12": "https://www.sciencedirect.com/science/article/pii/S0896627313002304",
+    "14": "https://onlinelibrary.wiley.com/doi/full/10.1002/hbm.25262",
+    "15": "https://www.cell.com/cell/fulltext/S0092-8674(19)30163-1",
+    "16": "https://bmccomplementmedtherapies.biomedcentral.com/articles/10.1186/s12906-024-04339-y",
+    "17": "https://pubmed.ncbi.nlm.nih.gov/14744566/"
+  }
+}

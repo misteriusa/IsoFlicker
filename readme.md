@@ -4,6 +4,18 @@
 
 IsoFlicker Pro has been enhanced with a powerful Isochronic Timeline Editor that allows you to create complex entrainment sessions with precise control over frequency transitions, carrier waves, modulation patterns, and more.
 
+## Windows 11 Native Stack (Preview)
+
+The repository now includes a Windows-specific stimulation engine and orchestration layer:
+
+- **`windows/`** — Direct3D 11 + WASAPI prototype with waitable swap chain, QPC telemetry, and CSV export (`cmake -S windows -B build`).
+- **`backend/`** — FastAPI + SQLModel service that exposes preset metadata, safety notes, and session logging endpoints.
+- **`frontend/`** — Next.js control surface (App Router + Tailwind + shadcn/ui primitives) visualizing Category A/B presets and safety messaging.
+- **`scripts/bootstrap.sh`** — One-shot local setup (Python venv + backend install + `npm install`).
+- **`scripts/ingest.py`** — Loads `data/presets/default_presets.json` into the SQLModel database.
+
+See `docs/windows_prd.md` for a snapshot of the Windows 11 PRD, and `discovery/summary.md` for the kickoff research trail.
+
 ## New Key Features
 
 ### Graphical Timeline and Frequency Control
