@@ -1,0 +1,156 @@
+        return super().resizeEvent(event)
+    
+    def paintEvent(self, event):
+        """Draw the visual preview"""
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        
+        # Draw background: video frame if available, else black
+        if self._frame_pixmap is not None and not self._frame_pixmap.isNull():
+            scaled = self._frame_pixmap.scaled(self.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            x = (self.width() - scaled.width()) // 2
+            y = (self.height() - scaled.height()) // 2
+            painter.drawPixmap(x, y, scaled)
+        else:
+            painter.fillRect(self.rect(), QColor(0, 0, 0))
+            # Hint when no video is attached
+            painter.setPen(QPen(QColor(200, 200, 200)))
+            painter.setFont(QFont("Arial", 10))
+            painter.drawText(10, 20, "No video attached — using black background")
+        
+        # Draw preview effect
+        if self.is_preview_active:
+            # Overlay flicker color with alpha so video remains visible
+            painter.setOpacity(max(0.0, min(1.0, self._overlay_alpha)))
+            painter.fillRect(self.rect(), self.current_color)
+            painter.setOpacity(1.0)
+        else:
+            # Draw static preview
+            width = self.width()
+            height = self.height()
+            
+            # Draw static representation of frequency
+            num_bars = min(10, max(2, int(self.frequency / 2)))
+            bar_width = width / num_bars
+            
+            for i in range(num_bars):
+                if i % 2 == 0:
+                    painter.fillRect(int(i * bar_width), 0, int(bar_width), height, QColor(200, 200, 200))
+                else:
+                    painter.fillRect(int(i * bar_width), 0, int(bar_width), height, QColor(50, 50, 50))
+            
+            # Show frequency info
+            painter.setPen(QPen(QColor(255, 255, 255)))
+            painter.setFont(QFont("Arial", 10))
+            painter.drawText(
+                10, 20, 
+                f"Freq: {self.frequency:.1f} Hz - {self.effect_type.capitalize()}"
+            )
+    
+    def update_preview(self):
+        """Update the preview animation"""
+        if not self.is_preview_active:
+            return
+            
+        # Calculate brightness based on time and frequency
+        if self.frequency <= 0:
+            self.frequency = 0.1  # Prevent division by zero
+            
+        # Update frame counter
+        self.frame_count += 1
+        
+        # Calculate pulse with sine wave (smoother)
+        # 24 frames per second (typical timer interval is ~40ms)
+        try:
+            denom = max(1, int(24 / float(self.frequency)))
+        except Exception:
+            denom = 1
+        phase = (self.frame_count % denom) / float(denom)
+        
+        if self.effect_type.lower() == "pulse":
+            # Simple on/off pulse
+            self.current_color = QColor(255, 255, 255)  # White overlay
+            self._overlay_alpha = self._intensity if phase < 0.5 else 0.0
+                
+        elif self.effect_type.lower() == "color_cycle" or self.effect_type.lower() == "color cycle":
+            # Color cycling effect
+            hue = (phase * 360) % 360
+            self.current_color = QColor.fromHsv(int(hue), 255, 255)
+            self._overlay_alpha = self._intensity
+            
+        elif self.effect_type.lower() == "flash":
+            # Graduated flash effect
+            b = abs(math.cos(phase * 2 * math.pi))
+            brightness = int(b * 255)
+            self.current_color = QColor(brightness, brightness, brightness)
+            self._overlay_alpha = self._intensity * b
+            
+        else:  # Default or "blur"
+            # Gradual fade effect
+            b = (math.sin(phase * 2 * math.pi) * 0.5 + 0.5)
+            brightness = int(b * 255)
+            self.current_color = QColor(brightness, brightness, brightness)
+            self._overlay_alpha = self._intensity * b
+        
+        # Update the widget
+        self.update()
+    
+    def start_preview(self, frequency=10.0, effect_type="pulse"):
+        """Start the preview animation"""
+        self.frequency = frequency
+        self.effect_type = effect_type
+        self.is_preview_active = True
+        self.frame_count = 0
+        
+        # Start timers - overlay ~24 fps, video at source fps
+        self.preview_timer.start(42)  # ~24 fps overlay
+        interval_ms = int(1000.0 / max(1.0, float(self._fps)))
+        interval_ms = max(15, min(100, interval_ms))  # clamp sane range
+        self._play_timer.start(interval_ms)
+        
+        # Update the info text
+        self.info_label.setText(f"Preview: {frequency:.1f} Hz")
+        
+        # Force redraw
+        self.update()
+    
+    def stop_preview(self):
+        """Stop the preview animation"""
+        self.is_preview_active = False
+        self.preview_timer.stop()
+        self._play_timer.stop()
+        
+        # Reset the info text
+        self.info_label.setText("Visual Preview")
+        
+        # Force redraw
+        self.update()
+    
+    def update_frequency(self, frequency):
+        """Update the preview frequency"""
+        self.frequency = frequency
+        
+        if self.is_preview_active:
+            self.info_label.setText(f"Preview: {frequency:.1f} Hz")
+        
+        # Force redraw
+        self.update()
+    
+    def show_static_preview(self, frequency):
+        """Show a static representation of the frequency"""
+        self.frequency = frequency
+        self.is_preview_active = False
+        
+        # Update label
+        self.info_label.setText(f"Static: {frequency:.1f} Hz")
+        
+        # Force redraw
+        self.update()
+
+    def set_intensity(self, intensity):
+        """Set overlay intensity 0..1"""
+        try:
+            self._intensity = max(0.0, min(1.0, float(intensity)))
+        except Exception:
+            self._intensity = 0.5
+        self.update()

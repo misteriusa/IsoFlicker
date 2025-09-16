@@ -1,0 +1,549 @@
+import sys
+import os
+import math
+import numpy as np
+import librosa
+import soundfile as sf
+import tempfile
+from PyQt5.QtWidgets import (
+    QApplication, QMainWindow, QLabel, QPushButton, QFileDialog, QComboBox,
+    QVBoxLayout, QHBoxLayout, QWidget, QMessageBox, QProgressBar, QDoubleSpinBox,
+    QCheckBox, QGroupBox, QSlider, QTabWidget, QLineEdit
+)
+from PyQt5.QtCore import Qt, QThread, pyqtSignal
+from moviepy.editor import VideoFileClip, AudioFileClip, CompositeAudioClip
+from moviepy.video.io.ImageSequenceClip import ImageSequenceClip
+import traceback
+
+def generate_isochronic_tone(frequency, duration, sample_rate=44100, volume=0.5, carrier_frequency=100.0):
+    """Generate an isochronic tone at the specified frequency and duration"""
+    # Generate time array
+    t = np.linspace(0, duration, int(sample_rate * duration), endpoint=False)
+    
+    # Create sine wave at the specified carrier frequency
+    sine_wave = np.sin(2 * np.pi * carrier_frequency * t)
+    
+    # Create amplitude modulation envelope for isochronic effect (square wave)
+    mod_freq = frequency  # Use entrainment frequency for modulation  # Modulation at same frequency as carrier
+    envelope = 0.5 * (1 + np.sign(np.sin(2 * np.pi * mod_freq * t)))
+    
+    # Apply envelope to sine wave
+    isochronic_tone = sine_wave * envelope * volume
+    
+    return isochronic_tone, sample_rate
+
+def detect_isochronic_frequency(audio_path):
+    try:
+        y, sr = librosa.load(audio_path, sr=None, mono=True)
+        tempo_bpm, _ = librosa.beat.beat_track(y=y, sr=sr)
+        if tempo_bpm <= 0:
+            return 10.0
+        return tempo_bpm / 60.0
+    except Exception as e:
+        print(f"Error detecting frequency: {e}")
+        return 10.0
+
+class FlickerWorker(QThread):
+    progress_signal = pyqtSignal(int)
+    finished_signal = pyqtSignal(str)
+    error_signal = pyqtSignal(str)
+
+    def __init__(self, video_path, output_path, mode, config):
+        super().__init__()
+        self.video_path = video_path
+        self.output_path = output_path
+        self.mode = mode
+        self.config = config
+
+    def run(self):
+        try:
+            self.process_video()
+        except Exception as e:
+            self.error_signal.emit(f"Error: {str(e)}\n{traceback.format_exc()}")
+
+    def process_video(self):
+        video_clip = None
+        final_clip = None
+        temp_dir = None
+        try:
+            # Create temporary directory for intermediate files
+            temp_dir = tempfile.mkdtemp()
+            temp_audio_path = os.path.join(temp_dir, "temp_audio.wav")
+            
+            # Load the original video
+            video_clip = VideoFileClip(self.video_path)
+            if not video_clip:
+                raise Exception("Failed to load video file")
+            
+            # Generate the isochronic tone if required
+            if self.config["use_audio_entrainment"]:
+                # Generate isochronic tone
+                self.progress_signal.emit(10)
+                duration = video_clip.duration
+                sample_rate = 44100  # Standard audio sample rate
+                
+                # Generate main tone
+                tone_data, sr = generate_isochronic_tone(
+                    self.config["tone_frequency"], 
+                    duration, 
+                    sample_rate, 
+                    self.config["tone_volume"],
+                    self.config.get("carrier_frequency", 100.0)  # Pass carrier frequency
+                )
+                
+                # Write the tone to a temporary file
+                sf.write(temp_audio_path, tone_data, sr)
+                
+                # Load the tone as an audio clip
+                tone_clip = AudioFileClip(temp_audio_path)
+                
+                # Mix with original audio if requested
+                if self.config["mix_with_original"] and video_clip.audio is not None:
+                    original_audio = video_clip.audio
+                    mixed_audio = CompositeAudioClip([
+                        original_audio.volumex(self.config["original_volume"]),
+                        tone_clip.volumex(self.config["tone_volume"])
+                    ])
+                    final_audio = mixed_audio
+                else:
+                    final_audio = tone_clip
+            else:
+                # Use original audio
+                final_audio = video_clip.audio if video_clip.audio else None
+            
+            self.progress_signal.emit(20)
+            
+            # Process video frames with flicker effect if enabled
+            if self.config["use_visual_entrainment"]:
+                fps = video_clip.fps
+                frame_count = int(video_clip.duration * fps)
+                frames = []
+                
+                # Process each frame with the flicker effect
+                for i in range(frame_count):
+                    if i % 10 == 0:  # Update progress every 10 frames
+                        progress = 20 + int((i / frame_count) * 60)
+                        self.progress_signal.emit(progress)
+                    
+                    t = i / fps
+                    frame = video_clip.get_frame(t)
+                    
+                    # Apply flicker effect using sine wave at the specified frequency
+                    flicker_amp = self.config["flicker_amplitude"]
+                    flicker_freq = self.config["visual_frequency"]
+                    factor = 1.0 + flicker_amp * math.sin(2.0 * math.pi * flicker_freq * t)
+                    factor = max(0, factor)
+                    
+                    # Apply the brightness factor to the frame
+                    modified_frame = np.clip(frame.astype(np.float32) * factor, 0, 255).astype(np.uint8)
+                    frames.append(modified_frame)
+                
+                # Create a clip from the modified frames
+                flicker_video = ImageSequenceClip(frames, fps=fps)
+                final_clip = flicker_video.set_audio(final_audio) if final_audio else flicker_video
+            else:
+                # Use original video with potentially modified audio
+                final_clip = video_clip.set_audio(final_audio) if final_audio else video_clip
+            
+            self.progress_signal.emit(80)
+            
+            # Determine output format
+            codec = "ffv1" if self.mode == "ffv1" else "libx264"
+            ext = ".mkv" if self.mode == "ffv1" else ".mp4"
+            
+            base, _ = os.path.splitext(self.output_path)
+            output_file = base + ext
+            
+            # Write the final video
+            if final_clip:
+                final_clip.write_videofile(
+                    output_file,
+                    codec=codec,
+                    audio_codec="pcm_s16le" if self.mode == "ffv1" else "aac",
+                    threads=4,
+                    ffmpeg_params=["-crf", "0", "-preset", 
+                                  "ultrafast" if self.mode == "ffv1" else "medium"]
+                )
+            else:
+                raise Exception("Failed to create output video clip")
+            
+            # Clean up resources
+            if video_clip and video_clip.audio:
+                video_clip.audio.close()
+            if video_clip:
+                video_clip.close()
+            if final_clip:
+                final_clip.close()
+            
+            # Clean up temporary files
+            if temp_dir:
+                try:
+                    if os.path.exists(temp_audio_path):
+                        os.remove(temp_audio_path)
+                    os.rmdir(temp_dir)
+                except Exception as e:
+                    print(f"Warning: Failed to clean up temporary files: {e}")
+            
+            self.progress_signal.emit(100)
+            self.finished_signal.emit(output_file)
+        except Exception as e:
+            # Clean up resources in case of error
+            if video_clip and video_clip.audio:
+                try:
+                    video_clip.audio.close()
+                except:
+                    pass
+            if video_clip:
+                try:
+                    video_clip.close()
+                except:
+                    pass
+            if final_clip:
+                try:
+                    final_clip.close()
+                except:
+                    pass
+            
+            # Clean up temporary directory
+            if temp_dir and os.path.exists(temp_dir):
+                try:
+                    if os.path.exists(temp_audio_path):
+                        os.remove(temp_audio_path)
+                    os.rmdir(temp_dir)
+                except:
+                    pass
+            
+            raise Exception(f"Error processing video: {str(e)}")
+
+class MainWindow(QMainWindow):
+    def __init__(self):
+        super().__init__()
+        self.video_path = ""
+        self.audio_path = ""
+        self.detected_freq = 0.0
+        self.init_ui()
+
+    def init_ui(self):
+        self.setWindowTitle("IsoFlicker Pro - Video & Audio Entrainment Generator")
+        self.setGeometry(100, 100, 800, 600)
+
+        # Main layout
+        main_widget = QWidget()
+        main_layout = QVBoxLayout()
+        
+        # Create tabs
+        tabs = QTabWidget()
+        
+        # File selection tab
+        file_tab = QWidget()
+        file_layout = QVBoxLayout()
+        
+        # Video controls
+        video_group = QGroupBox("Video Selection")
+        video_layout = QHBoxLayout()
+        
+        self.video_label = QLabel("No video file selected")
+        self.video_btn = QPushButton("Select Video File")
+        self.video_btn.clicked.connect(self.choose_video)
+        
+        video_layout.addWidget(self.video_label)
+        video_layout.addWidget(self.video_btn)
+        video_group.setLayout(video_layout)
+        file_layout.addWidget(video_group)
+        
+        # Optional audio input
+        audio_group = QGroupBox("External Audio (Optional)")
+        audio_layout = QHBoxLayout()
+        
+        self.audio_label = QLabel("No audio file selected")
+        self.audio_btn = QPushButton("Select Audio File")
+        self.audio_btn.clicked.connect(self.choose_audio)
+        self.clear_audio_btn = QPushButton("Clear")
+        self.clear_audio_btn.clicked.connect(self.clear_audio)
+        
+        audio_layout.addWidget(self.audio_label)
+        audio_layout.addWidget(self.audio_btn)
+        audio_layout.addWidget(self.clear_audio_btn)
+        audio_group.setLayout(audio_layout)
+        file_layout.addWidget(audio_group)
+        
+        file_tab.setLayout(file_layout)
+        
+        # Entrainment settings tab
+        settings_tab = QWidget()
+        settings_layout = QVBoxLayout()
+        
+        # Visual entrainment settings
+        visual_group = QGroupBox("Visual Entrainment")
+        visual_layout = QVBoxLayout()
+        
+        self.use_visual_check = QCheckBox("Enable Visual Entrainment")
+        self.use_visual_check.setChecked(True)
+        
+        freq_layout = QHBoxLayout()
+        freq_layout.addWidget(QLabel("Frequency (Hz):"))
+        self.visual_freq_spin = QDoubleSpinBox()
+        self.visual_freq_spin.setRange(0.5, 40.0)
+        self.visual_freq_spin.setValue(10.0)
+        self.visual_freq_spin.setSingleStep(0.5)
+        freq_layout.addWidget(self.visual_freq_spin)
+        
+        amp_layout = QHBoxLayout()
+        amp_layout.addWidget(QLabel("Flicker Strength:"))
+        self.flicker_amp_slider = QSlider(Qt.Horizontal)
+        self.flicker_amp_slider.setRange(1, 50)
+        self.flicker_amp_slider.setValue(10)
+        self.flicker_amp_value = QLabel("0.10")
+        self.flicker_amp_slider.valueChanged.connect(self.update_flicker_amp_label)
+        amp_layout.addWidget(self.flicker_amp_slider)
+        amp_layout.addWidget(self.flicker_amp_value)
+        
+        visual_layout.addWidget(self.use_visual_check)
+        visual_layout.addLayout(freq_layout)
+        visual_layout.addLayout(amp_layout)
+        visual_group.setLayout(visual_layout)
+        settings_layout.addWidget(visual_group)
+        
+        # Audio entrainment settings
+        audio_group = QGroupBox("Audio Entrainment")
+        audio_layout = QVBoxLayout()
+        
+        self.use_audio_check = QCheckBox("Enable Audio Entrainment")
+        self.use_audio_check.setChecked(True)
+        
+        tone_freq_layout = QHBoxLayout()
+        tone_freq_layout.addWidget(QLabel("Tone Frequency (Hz):"))
+        self.tone_freq_spin = QDoubleSpinBox()
+        self.tone_freq_spin.setRange(0.5, 40.0)
+        self.tone_freq_spin.setValue(10.0)
+        self.tone_freq_spin.setSingleStep(0.5)
+        tone_freq_layout.addWidget(self.tone_freq_spin)
+        
+        
+        carrier_freq_layout = QHBoxLayout()
+        carrier_freq_layout.addWidget(QLabel("Carrier Frequency (Hz):"))
+        self.carrier_freq_spin = QDoubleSpinBox()
+        self.carrier_freq_spin.setRange(20.0, 1000.0)
+        self.carrier_freq_spin.setValue(100.0)  # Default to 100Hz
+        self.carrier_freq_spin.setSingleStep(10.0)
+        carrier_freq_layout.addWidget(self.carrier_freq_spin)
+        
+        # Sync frequencies checkbox
+        self.sync_freq_check = QCheckBox("Synchronize Audio and Visual Frequencies")
+        self.sync_freq_check.setChecked(True)
+        self.sync_freq_check.stateChanged.connect(self.sync_frequencies)
+        
+        # Volume controls
+        volume_layout = QHBoxLayout()
+        volume_layout.addWidget(QLabel("Tone Volume:"))
+        self.tone_volume_slider = QSlider(Qt.Horizontal)
+        self.tone_volume_slider.setRange(1, 100)
+        self.tone_volume_slider.setValue(50)
+        self.tone_volume_value = QLabel("0.50")
+        self.tone_volume_slider.valueChanged.connect(self.update_tone_volume_label)
+        volume_layout.addWidget(self.tone_volume_slider)
+        volume_layout.addWidget(self.tone_volume_value)
+        
+        # Original audio mixing options
+        self.mix_original_check = QCheckBox("Mix with Original Audio")
+        self.mix_original_check.setChecked(True)
+        
+        orig_volume_layout = QHBoxLayout()
+        orig_volume_layout.addWidget(QLabel("Original Audio Volume:"))
+        self.orig_volume_slider = QSlider(Qt.Horizontal)
+        self.orig_volume_slider.setRange(1, 100)
+        self.orig_volume_slider.setValue(30)
+        self.orig_volume_value = QLabel("0.30")
+        self.orig_volume_slider.valueChanged.connect(self.update_orig_volume_label)
+        orig_volume_layout.addWidget(self.orig_volume_slider)
+        orig_volume_layout.addWidget(self.orig_volume_value)
+        
+        audio_layout.addWidget(self.use_audio_check)
+        audio_layout.addLayout(tone_freq_layout)
+        audio_layout.addLayout(carrier_freq_layout)
+        audio_layout.addWidget(self.sync_freq_check)
+        audio_layout.addLayout(volume_layout)
+        audio_layout.addWidget(self.mix_original_check)
+        audio_layout.addLayout(orig_volume_layout)
+        audio_group.setLayout(audio_layout)
+        settings_layout.addWidget(audio_group)
+        
+        settings_tab.setLayout(settings_layout)
+        
+        # Add tabs to tab widget
+        tabs.addTab(file_tab, "Files")
+        tabs.addTab(settings_tab, "Entrainment Settings")
+        
+        main_layout.addWidget(tabs)
+        
+        # Output format and processing
+        output_group = QGroupBox("Output Settings")
+        output_layout = QVBoxLayout()
+        
+        # Output format selection
+        format_layout = QHBoxLayout()
+        format_layout.addWidget(QLabel("Output Format:"))
+        self.format_combo = QComboBox()
+        self.format_combo.addItem("H.264 MP4 (Compatible)", "h264")
+        self.format_combo.addItem("FFV1 MKV (Lossless)", "ffv1")
+        format_layout.addWidget(self.format_combo)
+        
+        # Filename prefix
+        prefix_layout = QHBoxLayout()
+        prefix_layout.addWidget(QLabel("Filename Prefix:"))
+        self.prefix_edit = QLineEdit("IsoFlicker")
+        prefix_layout.addWidget(self.prefix_edit)
+        
+        output_layout.addLayout(format_layout)
+        output_layout.addLayout(prefix_layout)
+        output_group.setLayout(output_layout)
+        main_layout.addWidget(output_group)
+        
+        # Process button and progress bar
+        process_layout = QHBoxLayout()
+        self.process_btn = QPushButton("Process Video")
+        self.process_btn.clicked.connect(self.process_video)
+        self.process_btn.setEnabled(False)
+        process_layout.addWidget(self.process_btn)
+        
+        main_layout.addLayout(process_layout)
+        
+        # Progress bar
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setVisible(False)
+        main_layout.addWidget(self.progress_bar)
+        
+        main_widget.setLayout(main_layout)
+        self.setCentralWidget(main_widget)
+
+    def update_flicker_amp_label(self):
+        value = self.flicker_amp_slider.value() / 100
+        self.flicker_amp_value.setText(f"{value:.2f}")
+        
+    def update_tone_volume_label(self):
+        value = self.tone_volume_slider.value() / 100
+        self.tone_volume_value.setText(f"{value:.2f}")
+        if self.sync_freq_check.isChecked():
+            self.visual_freq_spin.setValue(self.tone_freq_spin.value())
+        
+    def update_orig_volume_label(self):
+        value = self.orig_volume_slider.value() / 100
+        self.orig_volume_value.setText(f"{value:.2f}")
+        
+    def sync_frequencies(self, state):
+        if state == Qt.Checked:
+            self.visual_freq_spin.setValue(self.tone_freq_spin.value())
+            
+    def choose_video(self):
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, "Select Video File",
+            "", "Video Files (*.mp4 *.mov *.avi *.mkv)")
+        
+        if file_path:
+            self.video_path = file_path
+            self.video_label.setText(f"Video: {os.path.basename(file_path)}")
+            self.update_process_button()
+
+    def choose_audio(self):
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, "Select Audio File",
+            "", "Audio Files (*.wav *.mp3 *.flac *.ogg)")
+        
+        if file_path:
+            self.audio_path = file_path
+            self.audio_label.setText(f"Audio: {os.path.basename(file_path)}")
+            
+            self.detected_freq = detect_isochronic_frequency(file_path)
+            
+            # Ask user if they want to use detected frequency
+            if self.detected_freq > 0:
+                reply = QMessageBox.question(
+                    self, 
+                    "Detected Frequency", 
+                    f"Detected frequency: {self.detected_freq:.2f} Hz\nUse this frequency for entrainment?",
+                    QMessageBox.Yes | QMessageBox.No,
+                    QMessageBox.Yes
+                )
+                
+                if reply == QMessageBox.Yes:
+                    self.tone_freq_spin.setValue(self.detected_freq)
+                    if self.sync_freq_check.isChecked():
+                        self.visual_freq_spin.setValue(self.detected_freq)
+    
+    def clear_audio(self):
+        self.audio_path = ""
+        self.audio_label.setText("No audio file selected")
+
+    def update_process_button(self):
+        self.process_btn.setEnabled(bool(self.video_path))
+
+    def get_config(self):
+        """Get the current configuration settings"""
+        config = {
+            "use_visual_entrainment": self.use_visual_check.isChecked(),
+            "visual_frequency": self.visual_freq_spin.value(),
+            "flicker_amplitude": self.flicker_amp_slider.value() / 100,
+            
+            "use_audio_entrainment": self.use_audio_check.isChecked(),
+            "tone_frequency": self.tone_freq_spin.value(),
+            "tone_volume": self.tone_volume_slider.value() / 100,
+            
+            "carrier_frequency": self.carrier_freq_spin.value(),
+            "mix_with_original": self.mix_original_check.isChecked(),
+            "original_volume": self.orig_volume_slider.value() / 100,
+            
+            "external_audio": self.audio_path if self.audio_path else None
+        }
+        return config
+
+    def process_video(self):
+        # Create default output filename based on settings
+        prefix = self.prefix_edit.text() or "IsoFlicker"
+        freq = self.tone_freq_spin.value() if self.use_audio_check.isChecked() else self.visual_freq_spin.value()
+        default_name = f"{prefix}_{freq:.1f}Hz"
+        
+        # Get save location
+        output_path, _ = QFileDialog.getSaveFileName(
+            self, "Save Output Video", default_name, "Video Files (*.mp4 *.mkv)")
+        
+        if not output_path:
+            return
+            
+        self.progress_bar.setVisible(True)
+        self.progress_bar.setValue(0)
+        self.process_btn.setEnabled(False)
+        
+        config = self.get_config()
+        
+        self.worker = FlickerWorker(
+            self.video_path,
+            output_path,
+            self.format_combo.currentData(),
+            config
+        )
+        
+        self.worker.progress_signal.connect(self.progress_bar.setValue)
+        self.worker.finished_signal.connect(self.on_process_complete)
+        self.worker.error_signal.connect(self.on_process_error)
+        self.worker.start()
+
+    def on_process_complete(self, output_file):
+        self.progress_bar.setVisible(False)
+        self.process_btn.setEnabled(True)
+        QMessageBox.information(self, "Success",
+                              f"Video processed successfully!\nSaved to: {output_file}")
+
+    def on_process_error(self, error_msg):
+        self.progress_bar.setVisible(False)
+        self.process_btn.setEnabled(True)
+        QMessageBox.critical(self, "Error", error_msg)
+
+if __name__ == "__main__":
+    try:
+        app = QApplication(sys.argv)
+        window = MainWindow()
+        window.show()
+        sys.exit(app.exec_())
+    except Exception as e:
+        print(f"Critical error: {e}\n{traceback.format_exc()}")
+        sys.exit(1)

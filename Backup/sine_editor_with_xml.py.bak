@@ -1,0 +1,1254 @@
+"""
+This is an extension of the existing sine_editor.py with added XML support.
+"""
+
+import sys
+import os
+import numpy as np
+import soundfile as sf
+import math
+import tempfile
+from PyQt5.QtWidgets import (
+    QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout,
+    QLabel, QPushButton, QFileDialog, QSlider, QGroupBox, QListWidget, QFrame,
+    QMenu, QAction, QMessageBox, QLineEdit, QDialog, QDialogButtonBox, QCheckBox,
+    QSpinBox, QRadioButton, QComboBox
+)
+from PyQt5.QtGui import QPainter, QColor, QPen, QBrush, QFont, QCursor
+from PyQt5.QtCore import Qt, QRect, QPoint, pyqtSignal, QObject, QSize
+
+# Import the preset converter
+from preset_converter import validate_preset_file, xml_to_sine_preset, sine_preset_to_xml
+
+# Constants for the application
+DEFAULT_BASE_FREQ = 100.0
+DEFAULT_ENTRAINMENT_FREQ = 10.0
+MIN_ENTRAINMENT_FREQ = 0.5
+MAX_ENTRAINMENT_FREQ = 40.0
+MIN_BASE_FREQ = 20.0
+MAX_BASE_FREQ = 1000.0
+DEFAULT_DURATION = 180  # Default duration of 3 minutes (180 seconds)
+
+class ControlPoint:
+    """Represents a control point on the curve"""
+    def __init__(self, time=0, value=0):
+        self.time = time  # Time in seconds
+        self.value = value  # Value (frequency or volume)
+        self.selected = False
+    
+    def is_near(self, x, y, width, height, duration, value_min, value_max, tolerance=20):
+        """Check if a point is near this control point with given tolerance"""
+        # Convert time and value to screen coordinates
+        px = int(self.time / duration * width)
+        y_factor = 1.0 - (self.value - value_min) / (value_max - value_min)
+        py = int(y_factor * height)
+        
+        # Check if the mouse coordinates are within the tolerance of this point
+        return abs(x - px) < tolerance and abs(y - py) < tolerance
+
+class FrequencyDialog(QDialog):
+    """Dialog for entering an exact frequency value"""
+    def __init__(self, current_value, min_value, max_value, parent=None):
+        super().__init__(parent)
+        self.current_value = current_value
+        self.min_value = min_value
+        self.max_value = max_value
+        self.init_ui()
+        
+    def init_ui(self):
+        from PyQt5.QtWidgets import QVBoxLayout, QLabel, QDoubleSpinBox, QDialogButtonBox
+        
+        self.setWindowTitle("Set Exact Value")
+        self.setFixedWidth(250)
+        layout = QVBoxLayout()
+        
+        # Create spinner for value input
+        self.spinner = QDoubleSpinBox()
+        self.spinner.setRange(self.min_value, self.max_value)
+        self.spinner.setValue(self.current_value)
+        self.spinner.setDecimals(2)  # Two decimal places
+        self.spinner.setSingleStep(0.1)  # Small step for fine control
+        
+        # Add to layout
+        layout.addWidget(QLabel("Enter exact value:"))
+        layout.addWidget(self.spinner)
+        
+        # Add buttons
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+        
+        self.setLayout(layout)
+    
+    def get_value(self):
+        return self.spinner.value()
+
+class TrackCurve:
+    """Manages a curve with control points for frequency or volume"""
+    def __init__(self, min_value=0, max_value=1, default_value=0.5):
+        self.control_points = []
+        self.min_value = min_value
+        self.max_value = max_value
+        self.default_value = default_value
+        self.selected_point = None
+        
+        # Add default points at start and end for a straight line
+        self.add_point(0, default_value)
+        self.add_point(DEFAULT_DURATION, default_value)  # Add point at 3 minutes by default
+        
+    def add_point(self, time, value):
+        """Add a control point at the specified time and value"""
+        # Check if there's already a point at this time
+        for point in self.control_points:
+            if abs(point.time - time) < 0.01:
+                point.value = value
+                return point
+        
+        # Add new point and sort
+        new_point = ControlPoint(time, value)
+        self.control_points.append(new_point)
+        self.control_points.sort(key=lambda p: p.time)
+        return new_point
+    
+    def remove_point(self, point):
+        """Remove a control point"""
+        if point in self.control_points and len(self.control_points) > 2:  # Keep at least 2 points for start and end
+            # Don't allow removing the first or last point
+            if point == self.control_points[0] or point == self.control_points[-1]:
+                return False
+            self.control_points.remove(point)
+            return True
+        return False
+    
+    def get_value_at_time(self, time):
+        """Get the interpolated value at a specific time"""
+        if not self.control_points:
+            return self.default_value
+        
+        # If time is before first point or after last point
+        if time <= self.control_points[0].time:
+            return self.control_points[0].value
+        if time >= self.control_points[-1].time:
+            return self.control_points[-1].value
+        
+        # Find the two points to interpolate between
+        for i in range(len(self.control_points) - 1):
+            if self.control_points[i].time <= time <= self.control_points[i + 1].time:
+                p1 = self.control_points[i]
+                p2 = self.control_points[i + 1]
+                
+                # Linear interpolation
+                t = (time - p1.time) / (p2.time - p1.time)
+                return p1.value + t * (p2.value - p1.value)
+        
+        return self.default_value
+    
+    def get_point_near(self, x, y, width, height, duration, tolerance=20):
+        """Find a control point near the given coordinates"""
+        for point in self.control_points:
+            if point.is_near(x, y, width, height, duration, self.min_value, self.max_value, tolerance):
+                return point
+        return None
+        
+    def point_on_line_segment(self, x, y, width, height, duration, tolerance=5):
+        """Check if a point is on or near any line segment between control points"""
+        for i in range(len(self.control_points) - 1):
+            p1 = self.control_points[i]
+            p2 = self.control_points[i+1]
+            
+            # Convert to screen coordinates
+            p1x = int(p1.time / duration * width)
+            p1y_factor = 1.0 - (p1.value - self.min_value) / (self.max_value - self.min_value)
+            p1y = int(p1y_factor * height)
+            
+            p2x = int(p2.time / duration * width)
+            p2y_factor = 1.0 - (p2.value - self.min_value) / (self.max_value - self.min_value)
+            p2y = int(p2y_factor * height)
+            
+            # Check if point is near the line segment
+            # First calculate the distance from point to line
+            if p1x == p2x:  # Vertical line
+                dist = abs(x - p1x)
+                # Check if y is within range
+                in_range = min(p1y, p2y) <= y <= max(p1y, p2y)
+            else:
+                # Calculate slope and y-intercept
+                m = (p2y - p1y) / (p2x - p1x)
+                b = p1y - m * p1x
+                
+                # Distance from point to line: |Ax + By + C|/sqrt(A^2 + B^2)
+                # Line equation: y = mx + b -> -mx + y - b = 0
+                # So A = -m, B = 1, C = -b
+                dist = abs(-m * x + y - b) / math.sqrt(m * m + 1)
+                
+                # Check if point is within the line segment range
+                # Project the point onto the line
+                t = ((x - p1x) * (p2x - p1x) + (y - p1y) * (p2y - p1y)) / ((p2x - p1x)**2 + (p2y - p1y)**2)
+                in_range = 0 <= t <= 1
+                
+            if dist <= tolerance and in_range:
+                # Return the time and value at the point on the line
+                if p1x == p2x:  # Vertical line
+                    time = p1.time
+                    t = (y - p1y) / (p2y - p1y) if p2y != p1y else 0
+                    value = p1.value + t * (p2.value - p1.value)
+                else:
+                    t = (x - p1x) / (p2x - p1x)
+                    time = p1.time + t * (p2.time - p1.time)
+                    value = p1.value + t * (p2.value - p1.value)
+                
+                return True, time, value
+                
+        return False, 0, 0
+    
+    def get_duration(self):
+        """Get the duration of the curve (time of last point)"""
+        if not self.control_points:
+            return DEFAULT_DURATION
+        return self.control_points[-1].time
+        
+    def clear_selection(self):
+        """Clear selection for all points"""
+        for point in self.control_points:
+            point.selected = False
+        self.selected_point = None
+
+    def extend_duration(self, new_duration):
+        """Extend the duration of the curve to the new duration"""
+        if not self.control_points:
+            # If no points, add default points
+            self.add_point(0, self.default_value)
+            self.add_point(new_duration, self.default_value)
+            return
+            
+        # Get the current last point
+        last_point = self.control_points[-1]
+        
+        # If new duration is longer than current duration
+        if new_duration > last_point.time:
+            # Add a new point at the end with the same value as the current last point
+            self.add_point(new_duration, last_point.value)
+        
+        # If new duration is shorter than current duration
+        elif new_duration < last_point.time:
+            # Remove all points beyond the new duration
+            self.control_points = [p for p in self.control_points if p.time <= new_duration]
+            
+            # Add a point at exactly the new duration if needed
+            if not any(abs(p.time - new_duration) < 0.01 for p in self.control_points):
+                # Interpolate value at the new duration
+                value = self.get_value_at_time(new_duration)
+                self.add_point(new_duration, value)
+
+class CurveEditor(QWidget):
+    """Widget for editing a curve with control points"""
+    point_changed = pyqtSignal()
+    
+    def __init__(self, title, curve, parent=None, time_unit="sec", value_unit="Hz", min_value=0, max_value=100):
+        super().__init__(parent)
+        self.setMinimumHeight(200)
+        self.title = title
+        self.curve = curve
+        self.time_unit = time_unit
+        self.value_unit = value_unit
+        self.min_value = min_value
+        self.max_value = max_value
+        self.dragging = False
+        self.selected_point = None
+        self.hover_point = None
+        self.setMouseTracking(True)  # Enable mouse tracking for hover effects
+        self.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.customContextMenuRequested.connect(self.show_context_menu)
+        
+        # Set background color
+        self.setAutoFillBackground(True)
+        palette = self.palette()
+        palette.setColor(self.backgroundRole(), QColor(0, 0, 0))
+        self.setPalette(palette)
+    
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        
+        # Draw the grid
+        self.draw_grid(painter)
+        
+        # Draw the curve
+        self.draw_curve(painter)
+    
+    def draw_grid(self, painter):
+        width = self.width()
+        height = self.height()
+        
+        # Draw grid lines
+        painter.setPen(QPen(QColor(50, 50, 50)))
+        
+        # Horizontal grid lines (10% intervals)
+        for i in range(11):
+            y = int(height * i / 10)
+            painter.drawLine(0, y, width, y)
+        
+        # Vertical grid lines (10% intervals)
+        for i in range(11):
+            x = int(width * i / 10)
+            painter.drawLine(x, 0, x, height)
+    
+    def draw_curve(self, painter):
+        if not self.curve.control_points:
+            return
+            
+        width = self.width()
+        height = self.height()
+        duration = max(180, self.curve.get_duration())  # Minimum 3 minute view
+        
+        # Draw connecting lines between points
+        painter.setPen(QPen(QColor(0, 255, 0), 2))
+        
+        points = []
+        for point in self.curve.control_points:
+            x = int(point.time / duration * width)
+            y_factor = 1.0 - (point.value - self.min_value) / (self.max_value - self.min_value)
+            y = int(y_factor * height)
+            points.append(QPoint(x, y))
+        
+        for i in range(len(points) - 1):
+            painter.drawLine(points[i], points[i+1])
+        
+        # Draw control points
+        point_size = 20  # Size for control points
+        for i, point in enumerate(self.curve.control_points):
+            # First and last points are shown in yellow to indicate they're fixed
+            if i == 0 or i == len(self.curve.control_points) - 1:
+                painter.setBrush(QBrush(QColor(255, 255, 0)))  # Yellow for end points
+                painter.setPen(QPen(QColor(255, 255, 0), 2))
+            elif point.selected or point == self.selected_point or point == self.hover_point:
+                painter.setBrush(QBrush(QColor(255, 165, 0)))  # Orange for selected/hover
+                painter.setPen(QPen(QColor(255, 165, 0), 2))
+            else:
+                painter.setBrush(QBrush(QColor(0, 255, 0)))
+                painter.setPen(QPen(QColor(0, 255, 0), 2))
+            
+            x = int(point.time / duration * width)
+            y_factor = 1.0 - (point.value - self.min_value) / (self.max_value - self.min_value)
+            y = int(y_factor * height)
+            
+            # Draw point - larger rectangle using integer values for all parameters
+            half_size = point_size // 2  # Use integer division instead of float division
+            painter.drawRect(x - half_size, y - half_size, point_size, point_size)
+            
+            # Draw time and value for selected point
+            if point.selected or point == self.selected_point:
+                minutes = int(point.time) // 60
+                seconds = int(point.time) % 60
+                time_str = f"{minutes:02d}:{seconds:02d}:{int((point.time - int(point.time)) * 100):02d}"
+                value_str = f"{point.value:.1f}{self.value_unit}"
+                text = f"{time_str} , {value_str}"
+                
+                text_width = painter.fontMetrics().width(text)
+                text_x = max(10, min(x - text_width // 2, width - text_width - 10))
+                text_y = max(15, min(y - 15, height - 10))
+                
+                # Draw background for text
+                painter.setPen(Qt.NoPen)
+                painter.setBrush(QBrush(QColor(0, 0, 0, 200)))
+                painter.drawRect(text_x - 5, text_y - 15, text_width + 10, 20)
+                
+                # Draw text
+                painter.setPen(QPen(QColor(255, 255, 255)))
+                painter.drawText(text_x, text_y, text)
+    
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            width = self.width()
+            height = self.height()
+            duration = max(180, self.curve.get_duration())
+            
+            # First check if we're clicking on an existing point
+            point = self.curve.get_point_near(event.x(), event.y(), width, height, duration)
+            
+            if point:
+                # Clear previous selection
+                self.curve.clear_selection()
+                
+                # Select new point
+                self.selected_point = point
+                point.selected = True
+                self.dragging = True
+                self.update()
+            else:
+                # Check if we're clicking on a line segment
+                on_line, time, value = self.curve.point_on_line_segment(
+                    event.x(), event.y(), width, height, duration)
+                
+                if on_line:
+                    # Clear previous selection
+                    self.curve.clear_selection()
+                    
+                    # Add and select new point
+                    new_point = self.curve.add_point(time, value)
+                    self.selected_point = new_point
+                    new_point.selected = True
+                    self.dragging = True
+                    self.update()
+                    self.point_changed.emit()
+                else:
+                    # If not on point or line, just clear selection
+                    self.curve.clear_selection()
+                    self.selected_point = None
+                    self.update()
+    
+    def mouseDoubleClickEvent(self, event):
+        """Handle double click to set exact value"""
+        width = self.width()
+        height = self.height()
+        duration = max(180, self.curve.get_duration())
+        
+        # Check if we're double-clicking on an existing point
+        point = self.curve.get_point_near(event.x(), event.y(), width, height, duration)
+        
+        if point:
+            # Show dialog to set exact value
+            dialog = FrequencyDialog(
+                point.value, 
+                self.min_value, 
+                self.max_value, 
+                parent=self
+            )
+            
+            if dialog.exec_():
+                # Update point value
+                point.value = dialog.get_value()
+                self.update()
+                self.point_changed.emit()
+    
+    def mouseReleaseEvent(self, event):
+        self.dragging = False
+    
+    def mouseMoveEvent(self, event):
+        width = self.width()
+        height = self.height()
+        duration = max(180, self.curve.get_duration())
+        
+        # Check for hover effects
+        hover_point = self.curve.get_point_near(event.x(), event.y(), width, height, duration)
+        if hover_point != self.hover_point:
+            self.hover_point = hover_point
+            self.update()
+        
+        # Handle dragging of selected point
+        if self.dragging and self.selected_point:
+            # Don't allow dragging the first or last point horizontally
+            if self.selected_point == self.curve.control_points[0] or self.selected_point == self.curve.control_points[-1]:
+                # Only allow vertical movement for first and last points
+                value_factor = 1.0 - event.y() / height
+                value = self.min_value + value_factor * (self.max_value - self.min_value)
+                value = max(self.min_value, min(self.max_value, value))
+                self.selected_point.value = value
+            else:
+                # Normal point movement (horizontal and vertical)
+                time = duration * event.x() / width
+                value_factor = 1.0 - event.y() / height
+                value = self.min_value + value_factor * (self.max_value - self.min_value)
+                
+                # Clamp values
+                time = max(0, min(time, duration))
+                value = max(self.min_value, min(self.max_value, value))
+                
+                self.selected_point.time = time
+                self.selected_point.value = value
+            
+            # Re-sort points
+            self.curve.control_points.sort(key=lambda p: p.time)
+            
+            self.update()
+            self.point_changed.emit()
+    
+    def show_context_menu(self, position):
+        """Show context menu with options for the selected point"""
+        width = self.width()
+        height = self.height()
+        duration = max(180, self.curve.get_duration())
+        
+        # Check if right-clicking on a point
+        point = self.curve.get_point_near(position.x(), position.y(), width, height, duration)
+        
+        if point:
+            # Update selection
+            self.curve.clear_selection()
+            self.selected_point = point
+            point.selected = True
+            self.update()
+            
+            # Create context menu
+            menu = QMenu(self)
+            
+            # Don't allow deleting end points
+            if point != self.curve.control_points[0] and point != self.curve.control_points[-1]:
+                delete_action = QAction("Delete Point", self)
+                delete_action.triggered.connect(self.delete_selected_point)
+                menu.addAction(delete_action)
+            
+            set_value_action = QAction("Set Exact Value...", self)
+            set_value_action.triggered.connect(self.set_exact_value)
+            menu.addAction(set_value_action)
+            
+            menu.exec_(self.mapToGlobal(position))
+    
+    def set_exact_value(self):
+        """Show dialog to set exact value for selected point"""
+        if self.selected_point:
+            dialog = FrequencyDialog(
+                self.selected_point.value, 
+                self.min_value, 
+                self.max_value, 
+                parent=self
+            )
+            
+            if dialog.exec_():
+                # Update point value
+                self.selected_point.value = dialog.get_value()
+                self.update()
+                self.point_changed.emit()
+    
+    def delete_selected_point(self):
+        """Delete the currently selected control point"""
+        if self.selected_point:
+            # Don't allow deleting end points
+            if self.selected_point != self.curve.control_points[0] and self.selected_point != self.curve.control_points[-1]:
+                if self.curve.remove_point(self.selected_point):
+                    self.selected_point = None
+                    self.update()
+                    self.point_changed.emit()
+
+class SinePreset:
+    """Represents a full preset with multiple curves for entrainment, volume, and base frequency"""
+    def __init__(self, name="New Preset"):
+        self.name = name
+        self.entrainment_curve = TrackCurve(MIN_ENTRAINMENT_FREQ, MAX_ENTRAINMENT_FREQ, DEFAULT_ENTRAINMENT_FREQ)
+        self.volume_curve = TrackCurve(0.0, 1.0, 0.5)
+        self.base_freq_curve = TrackCurve(MIN_BASE_FREQ, MAX_BASE_FREQ, DEFAULT_BASE_FREQ)
+    
+    def get_duration(self):
+        """Get the total duration of the preset"""
+        return max(
+            self.entrainment_curve.get_duration(),
+            self.volume_curve.get_duration(),
+            self.base_freq_curve.get_duration(),
+            DEFAULT_DURATION  # Ensure minimum duration
+        )
+    
+    def set_duration(self, duration):
+        """Set the duration for all curves in the preset"""
+        self.entrainment_curve.extend_duration(duration)
+        self.volume_curve.extend_duration(duration)
+        self.base_freq_curve.extend_duration(duration)
+
+    def generate_audio(self, sample_rate=44100):
+        """Generate the audio for this preset"""
+        duration = self.get_duration()
+        if duration <= 0:
+            return np.array([]), sample_rate
+        
+        # Generate time array
+        num_samples = int(sample_rate * duration)
+        t = np.linspace(0, duration, num_samples, endpoint=False)
+        
+        # Create output array
+        output = np.zeros(num_samples)
+        
+        # Process in small chunks to handle varying parameters
+        chunk_size = int(0.01 * sample_rate)  # 10ms chunks
+        for i in range(0, num_samples, chunk_size):
+            end_idx = min(i + chunk_size, num_samples)
+            chunk_t = t[i:end_idx]
+            chunk_size_actual = len(chunk_t)
+            
+            # Get current time in seconds
+            current_time = chunk_t[0]
+            
+            # Look up parameters at this time
+            entrainment_freq = self.entrainment_curve.get_value_at_time(current_time)
+            volume = self.volume_curve.get_value_at_time(current_time)
+            base_freq = self.base_freq_curve.get_value_at_time(current_time)
+            
+            # Generate carrier wave
+            carrier = np.sin(2 * np.pi * base_freq * chunk_t)
+            
+            # Generate modulation envelope (on/off isochronic pulses)
+            envelope = 0.5 * (1 + np.sign(np.sin(2 * np.pi * entrainment_freq * chunk_t)))
+            
+            # Apply envelope to carrier with volume adjustment
+            chunk_output = carrier * envelope * volume
+            
+            # Add to output
+            output[i:end_idx] = chunk_output
+        
+        # Apply fade in/out (10ms fade)
+        fade_samples = min(int(0.01 * sample_rate), num_samples // 10)
+        if fade_samples > 0:
+            # Fade in
+            output[:fade_samples] *= np.linspace(0, 1, fade_samples)
+            # Fade out
+            output[-fade_samples:] *= np.linspace(1, 0, fade_samples)
+            
+        # Normalize to prevent clipping
+        max_amp = np.max(np.abs(output))
+        if max_amp > 0.9:  # If close to clipping
+            output = output * (0.9 / max_amp)
+        
+        return output, sample_rate
+    
+    def generate_looped_audio(self, target_duration, sample_rate=44100):
+        """Generate audio that loops to match the target duration"""
+        # Generate the base audio
+        audio_data, sr = self.generate_audio(sample_rate)
+        
+        # Calculate current audio duration
+        audio_duration = len(audio_data) / sr
+        
+        # If audio is already longer than target, just return it
+        if audio_duration >= target_duration:
+            return audio_data, sr
+        
+        # Calculate how many times to repeat
+        repeats = int(math.ceil(target_duration / audio_duration))
+        
+        # Create looped audio
+        looped_audio = np.tile(audio_data, repeats)
+        
+        # Trim to exact duration
+        samples_needed = int(target_duration * sr)
+        if len(looped_audio) > samples_needed:
+            looped_audio = looped_audio[:samples_needed]
+        
+        return looped_audio, sr
+    
+    def save_to_file(self, filepath):
+        """Save preset to a .sin file"""
+        import json
+        
+        data = {
+            "name": self.name,
+            "entrainment_points": [{"time": p.time, "value": p.value} for p in self.entrainment_curve.control_points],
+            "volume_points": [{"time": p.time, "value": p.value} for p in self.volume_curve.control_points],
+            "base_freq_points": [{"time": p.time, "value": p.value} for p in self.base_freq_curve.control_points]
+        }
+        
+        with open(filepath, 'w') as f:
+            json.dump(data, f, indent=2)
+    
+    @classmethod
+    def load_from_file(cls, filepath):
+        """Load preset from a file (.sin or .xml)"""
+        is_valid, format_type = validate_preset_file(filepath)
+        
+        if not is_valid:
+            raise ValueError(f"Invalid preset file: {filepath}")
+            
+        if format_type == "xml":
+            # Convert XML preset to SINE format
+            preset_data = xml_to_sine_preset(filepath)
+            
+            # Create a new preset
+            preset = cls(name=preset_data.get("name", "Imported Preset"))
+            
+            # Clear default points
+            preset.entrainment_curve.control_points = []
+            preset.volume_curve.control_points = []
+            preset.base_freq_curve.control_points = []
+            
+            # Add points from the XML data
+            for point_data in preset_data.get("entrainment_points", []):
+                preset.entrainment_curve.add_point(point_data["time"], point_data["value"])
+            
+            for point_data in preset_data.get("volume_points", []):
+                preset.volume_curve.add_point(point_data["time"], point_data["value"])
+            
+            for point_data in preset_data.get("base_freq_points", []):
+                preset.base_freq_curve.add_point(point_data["time"], point_data["value"])
+                
+            return preset
+            
+        elif format_type == "json":
+            # Load as normal JSON file
+            import json
+            
+            with open(filepath, 'r') as f:
+                data = json.load(f)
+            
+            preset = cls(name=data.get("name", "Imported Preset"))
+            
+            # Clear default points
+            preset.entrainment_curve.control_points = []
+            preset.volume_curve.control_points = []
+            preset.base_freq_curve.control_points = []
+            
+            # Load entrainment points
+            for point_data in data.get("entrainment_points", []):
+                preset.entrainment_curve.add_point(point_data["time"], point_data["value"])
+            
+            # Load volume points
+            for point_data in data.get("volume_points", []):
+                preset.volume_curve.add_point(point_data["time"], point_data["value"])
+            
+            # Load base frequency points
+            for point_data in data.get("base_freq_points", []):
+                preset.base_freq_curve.add_point(point_data["time"], point_data["value"])
+            
+            return preset
+        else:
+            raise ValueError(f"Unsupported preset format: {format_type}")
+
+class NameDialog(QDialog):
+    """Dialog for entering a preset name"""
+    def __init__(self, current_name="New Preset", parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Preset Name")
+        layout = QVBoxLayout()
+        
+        self.name_edit = QLineEdit(current_name)
+        layout.addWidget(QLabel("Enter preset name:"))
+        layout.addWidget(self.name_edit)
+        
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+        
+        self.setLayout(layout)
+    
+    def get_name(self):
+        return self.name_edit.text()
+
+class ExportSettingsDialog(QDialog):
+    """Dialog for configuring export settings"""
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Export Settings")
+        self.setMinimumWidth(400)
+        layout = QVBoxLayout()
+        
+        # File format selection
+        format_group = QGroupBox("File Format")
+        format_layout = QVBoxLayout()
+        
+        self.wav_radio = QRadioButton("WAV (Uncompressed)")
+        self.wav_radio.setChecked(True)
+        format_layout.addWidget(self.wav_radio)
+        
+        self.flac_radio = QRadioButton("FLAC (Lossless Compressed)")
+        format_layout.addWidget(self.flac_radio)
+        
+        self.mp3_radio = QRadioButton("MP3 (Lossy Compressed)")
+        format_layout.addWidget(self.mp3_radio)
+        
+        format_group.setLayout(format_layout)
+        layout.addWidget(format_group)
+        
+        # MP3 quality settings (only enabled when MP3 is selected)
+        self.mp3_settings = QGroupBox("MP3 Quality")
+        mp3_layout = QHBoxLayout()
+        
+        mp3_layout.addWidget(QLabel("Bitrate:"))
+        self.bitrate_combo = QComboBox()
+        self.bitrate_combo.addItems(["128 kbps", "192 kbps", "256 kbps", "320 kbps"])
+        self.bitrate_combo.setCurrentIndex(1)  # Default to 192 kbps
+        mp3_layout.addWidget(self.bitrate_combo)
+        
+        self.mp3_settings.setLayout(mp3_layout)
+        self.mp3_settings.setEnabled(False)
+        layout.addWidget(self.mp3_settings)
+        
+        # Sample rate settings
+        sample_group = QGroupBox("Sample Rate")
+        sample_layout = QHBoxLayout()
+        
+        sample_layout.addWidget(QLabel("Sample Rate:"))
+        self.sample_combo = QComboBox()
+        self.sample_combo.addItems(["44100 Hz (CD Quality)", "48000 Hz (DVD Quality)", "96000 Hz (Hi-Res)"])
+        sample_layout.addWidget(self.sample_combo)
+        
+        sample_group.setLayout(sample_layout)
+        layout.addWidget(sample_group)
+        
+        # Normalization option
+        self.normalize_check = QCheckBox("Normalize audio (prevents clipping)")
+        self.normalize_check.setChecked(True)
+        layout.addWidget(self.normalize_check)
+        
+        # Fade in/out options
+        fade_group = QGroupBox("Fade In/Out")
+        fade_layout = QGridLayout()
+        
+        fade_layout.addWidget(QLabel("Fade In:"), 0, 0)
+        self.fade_in_spin = QSpinBox()
+        self.fade_in_spin.setRange(0, 10000)  # 0-10 seconds in ms
+        self.fade_in_spin.setValue(100)  # Default 100ms
+        self.fade_in_spin.setSuffix(" ms")
+        fade_layout.addWidget(self.fade_in_spin, 0, 1)
+        
+        fade_layout.addWidget(QLabel("Fade Out:"), 1, 0)
+        self.fade_out_spin = QSpinBox()
+        self.fade_out_spin.setRange(0, 10000)  # 0-10 seconds in ms
+        self.fade_out_spin.setValue(100)  # Default 100ms
+        self.fade_out_spin.setSuffix(" ms")
+        fade_layout.addWidget(self.fade_out_spin, 1, 1)
+        
+        fade_group.setLayout(fade_layout)
+        layout.addWidget(fade_group)
+        
+        # Buttons
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+        
+        self.setLayout(layout)
+        
+        # Connect signals
+        self.mp3_radio.toggled.connect(self.mp3_settings.setEnabled)
+    
+    def get_settings(self):
+        """Get the selected export settings"""
+        # Determine file format
+        if self.wav_radio.isChecked():
+            file_format = "wav"
+        elif self.flac_radio.isChecked():
+            file_format = "flac"
+        else:
+            file_format = "mp3"
+        
+        # Get MP3 bitrate if applicable
+        bitrate = "192k"  # Default
+        if file_format == "mp3":
+            bitrate = self.bitrate_combo.currentText().split()[0] + "k"
+        
+        # Get sample rate
+        sample_rate = 44100  # Default
+        if self.sample_combo.currentIndex() == 1:
+            sample_rate = 48000
+        elif self.sample_combo.currentIndex() == 2:
+            sample_rate = 96000
+        
+        return {
+            "format": file_format,
+            "bitrate": bitrate,
+            "sample_rate": sample_rate,
+            "normalize": self.normalize_check.isChecked(),
+            "fade_in": self.fade_in_spin.value() / 1000.0,  # Convert to seconds
+            "fade_out": self.fade_out_spin.value() / 1000.0  # Convert to seconds
+        }
+
+class SineEditorWidget(QWidget):
+    """Widget for the SINE Editor interface"""
+    preset_changed = pyqtSignal()
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.preset = SinePreset()
+        self.current_time = 0
+        self.playing = False
+        self.current_file_path = None  # Track the current file path
+        self.init_ui()
+    
+    def init_ui(self):
+        main_layout = QVBoxLayout()
+        
+        # File operations button row
+        file_buttons = QHBoxLayout()
+        
+        self.new_preset_btn = QPushButton("New Preset")
+        self.new_preset_btn.clicked.connect(self.new_preset)
+        file_buttons.addWidget(self.new_preset_btn)
+        
+        self.load_preset_btn = QPushButton("Load Preset")
+        self.load_preset_btn.clicked.connect(self.open_preset)
+        file_buttons.addWidget(self.load_preset_btn)
+        
+        self.save_preset_btn = QPushButton("Save Preset")
+        self.save_preset_btn.clicked.connect(self.save_preset)
+        file_buttons.addWidget(self.save_preset_btn)
+        
+        self.save_as_btn = QPushButton("Save As...")
+        self.save_as_btn.clicked.connect(self.save_preset_as)
+        file_buttons.addWidget(self.save_as_btn)
+        
+        main_layout.addLayout(file_buttons)
+        
+        # Preset name display
+        name_layout = QHBoxLayout()
+        name_layout.addWidget(QLabel("Preset Name:"))
+        self.preset_name_label = QLabel(self.preset.name)
+        self.preset_name_label.setStyleSheet("font-weight: bold;")
+        name_layout.addWidget(self.preset_name_label)
+        
+        rename_btn = QPushButton("Rename")
+        rename_btn.clicked.connect(self.rename_preset)
+        name_layout.addWidget(rename_btn)
+        
+        name_layout.addStretch()
+        main_layout.addLayout(name_layout)
+        
+        # Editor section
+        editor_layout = QVBoxLayout()
+        
+        # Entrainment frequency editor
+        entrainment_label = QLabel("Entrainment frequency (Isochronic pulses)")
+        self.entrainment_editor = CurveEditor(
+            "", 
+            self.preset.entrainment_curve,
+            min_value=MIN_ENTRAINMENT_FREQ,
+            max_value=MAX_ENTRAINMENT_FREQ,
+            value_unit="Hz"
+        )
+        self.entrainment_editor.point_changed.connect(self.update_duration)
+        
+        # Volume editor
+        volume_label = QLabel("Volume")
+        self.volume_editor = CurveEditor(
+            "",
+            self.preset.volume_curve,
+            min_value=0,
+            max_value=1,
+            value_unit=""
+        )
+        self.volume_editor.point_changed.connect(self.update_duration)
+        
+        # Base frequency editor
+        base_freq_label = QLabel("Base frequency (Carrier)")
+        self.base_freq_editor = CurveEditor(
+            "",
+            self.preset.base_freq_curve,
+            min_value=MIN_BASE_FREQ,
+            max_value=MAX_BASE_FREQ,
+            value_unit="Hz"
+        )
+        self.base_freq_editor.point_changed.connect(self.update_duration)
+        
+        # Add editors to layout
+        editor_layout.addWidget(entrainment_label)
+        editor_layout.addWidget(self.entrainment_editor)
+        editor_layout.addWidget(volume_label)
+        editor_layout.addWidget(self.volume_editor)
+        editor_layout.addWidget(base_freq_label)
+        editor_layout.addWidget(self.base_freq_editor)
+        
+        # Add duration control
+        duration_layout = QHBoxLayout()
+        duration_layout.addWidget(QLabel("Duration (minutes):"))
+        self.duration_spinbox = QSpinBox()
+        self.duration_spinbox.setRange(1, 180)  # 1 minute to 3 hours
+        self.duration_spinbox.setValue(3)  # Default 3 minutes
+        self.duration_spinbox.valueChanged.connect(self.update_timeline_duration)
+        duration_layout.addWidget(self.duration_spinbox)
+        
+        # Add "Match Video" button to automatically match video duration
+        self.match_video_btn = QPushButton("Match Video Duration")
+        self.match_video_btn.clicked.connect(self.match_video_duration)
+        duration_layout.addWidget(self.match_video_btn)
+        
+        editor_layout.addLayout(duration_layout)
+        
+        main_layout.addLayout(editor_layout)
+        
+        # Status and duration display
+        status_layout = QHBoxLayout()
+        self.status_label = QLabel("Ready")
+        status_layout.addWidget(self.status_label)
+        
+        self.duration_label = QLabel("Total Duration: 3:00")
+        status_layout.addWidget(self.duration_label)
+        status_layout.addStretch()
+        
+        main_layout.addLayout(status_layout)
+        
+        # Export buttons
+        export_layout = QHBoxLayout()
+        
+        self.export_audio_btn = QPushButton("Export Audio...")
+        self.export_audio_btn.clicked.connect(self.export_audio)
+        export_layout.addWidget(self.export_audio_btn)
+        
+        self.export_xml_btn = QPushButton("Export as XML...")
+        self.export_xml_btn.clicked.connect(self.export_xml)
+        export_layout.addWidget(self.export_xml_btn)
+        
+        export_layout.addStretch()
+        main_layout.addLayout(export_layout)
+        
+        self.setLayout(main_layout)
+        
+        # Update duration display
+        self.update_duration()
+    
+    def update_timeline_duration(self):
+        """Update the timeline duration based on the spinbox value"""
+        minutes = self.duration_spinbox.value()
+        new_duration = minutes * 60  # Convert to seconds
+        
+        # Update preset duration
+        self.preset.set_duration(new_duration)
+        
+        # Update display
+        self.update_editors()
+        self.update_duration()
+        self.preset_changed.emit()
+
+    def match_video_duration(self):
+        """Match the duration to the selected video"""
+        # Get the main window to access the video duration
+        main_window = self.window()
+        if not hasattr(main_window, 'original_window') or not main_window.original_window:
+            QMessageBox.warning(self, "Error", "Cannot access main window or video information.")
+            return
+        
+        # Get video path from original window
+        video_path = main_window.original_window.video_path
+        if not video_path:
+            QMessageBox.warning(self, "Error", "Please select a video file in the Basic Mode tab first.")
+            return
+            
+        try:
+            # Use moviepy to get video duration
+            from moviepy.editor import VideoFileClip
+            clip = VideoFileClip(video_path)
+            duration_seconds = clip.duration
+            clip.close()
+            
+            # Convert to minutes for the spinbox (rounded up)
+            import math
+            duration_minutes = math.ceil(duration_seconds / 60)
+            
+            # Set the spinbox value (which will trigger the update)
+            self.duration_spinbox.setValue(duration_minutes)
+            
+            QMessageBox.information(self, "Success", 
+                                  f"Timeline duration set to match video: {duration_minutes} minutes")
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to get video duration: {str(e)}")
+    
+    def new_preset(self):
+        dialog = NameDialog(parent=self)
+        if dialog.exec_():
+            name = dialog.get_name()
+            self.preset = SinePreset(name)
+            self.preset_name_label.setText(name)
+            self.update_editors()
+            self.update_duration()
+            self.current_file_path = None  # Reset current file path
+            self.preset_changed.emit()
+    
+    def open_preset(self):
+        filepath, _ = QFileDialog.getOpenFileName(
+            self, "Open Preset", "", "All Preset Files (*.sin *.xml);;SINE Preset Files (*.sin);;XML Preset Files (*.xml);;All Files (*)"
+        )
+        
+        if filepath:
+            try:
+                self.preset = SinePreset.load_from_file(filepath)
+                self.preset_name_label.setText(self.preset.name)
+                self.update_editors()
+                self.update_duration()
+                
+                # Update duration spinbox to match preset
+                duration_seconds = self.preset.get_duration()
+                duration_minutes = math.ceil(duration_seconds / 60)
+                self.duration_spinbox.setValue(duration_minutes)
+                
+                self.current_file_path = filepath  # Store the current file path
+                self.preset_changed.emit()
+                
+                self.status_label.setText(f"Loaded: {os.path.basename(filepath)}")
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"Failed to open preset: {str(e)}")
+    
+    def save_preset(self):
+        if not self.current_file_path:
+            # If we haven't saved before, do Save As
+            self.save_preset_as()
+        else:
+            try:
+                # Add appropriate extension if needed
+                if not self.current_file_path.lower().endswith('.sin'):
+                    self.current_file_path += '.sin'
+                    
+                self.preset.save_to_file(self.current_file_path)
+                self.status_label.setText(f"Saved: {os.path.basename(self.current_file_path)}")
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"Failed to save preset: {str(e)}")
+    
+    def save_preset_as(self):
+        filepath, _ = QFileDialog.getSaveFileName(
+            self, "Save Preset As", self.preset.name, "SINE Preset Files (*.sin)"
+        )
+        
+        if filepath:
+            try:
+                # Add extension if missing
+                if not filepath.lower().endswith('.sin'):
+                    filepath += '.sin'
+                    
+                self.preset.save_to_file(filepath)
+                self.current_file_path = filepath  # Update current file path
+                self.status_label.setText(f"Saved: {os.path.basename(filepath)}")
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"Failed to save preset: {str(e)}")
+    
+    def export_audio(self):
+        # Show export settings dialog
+        settings_dialog = ExportSettingsDialog(self)
+        if not settings_dialog.exec_():
+            return
+        
+        export_settings = settings_dialog.get_settings()
+        
+        # Get save location with appropriate extension
+        file_format = export_settings["format"]
+        filename_filter = f"{file_format.upper()} Files (*.{file_format})"
+        
+        filepath, _ = QFileDialog.getSaveFileName(
+            self, "Export Audio", self.preset.name, filename_filter
+        )
+        
+        if filepath:
+            try:
+                # Add appropriate extension if missing
+                if not filepath.lower().endswith(f".{file_format}"):
+                    filepath += f".{file_format}"
+                
+                # Generate audio with specified sample rate
+                audio_data, _ = self.preset.generate_audio(sample_rate=export_settings["sample_rate"])
+                
+                # Apply normalization if requested
+                if export_settings["normalize"]:
+                    max_amp = np.max(np.abs(audio_data))
+                    if max_amp > 0.01:  # Avoid division by near-zero
+                        audio_data = audio_data * (0.95 / max_amp)
+                
+                # Apply custom fade in/out
+                if export_settings["fade_in"] > 0 or export_settings["fade_out"] > 0:
+                    fade_in_samples = int(export_settings["fade_in"] * export_settings["sample_rate"])
+                    fade_out_samples = int(export_settings["fade_out"] * export_settings["sample_rate"])
+                    
+                    if fade_in_samples > 0:
+                        audio_data[:fade_in_samples] *= np.linspace(0, 1, fade_in_samples)
+                    
+                    if fade_out_samples > 0:
+                        audio_data[-fade_out_samples:] *= np.linspace(1, 0, fade_out_samples)
+                
+                # Save audio
+                if file_format == "wav":
+                    sf.write(filepath, audio_data, export_settings["sample_rate"])
+                elif file_format == "flac":
+                    sf.write(filepath, audio_data, export_settings["sample_rate"], format="FLAC")
+                elif file_format == "mp3":
+                    try:
+                        # First write to temporary WAV
+                        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
+                            temp_wav = tmp.name
+                        
+                        sf.write(temp_wav, audio_data, export_settings["sample_rate"])
+                        
+                        # Convert to MP3 using pydub
+                        from pydub import AudioSegment
+                        sound = AudioSegment.from_wav(temp_wav)
+                        sound.export(filepath, format="mp3", bitrate=export_settings["bitrate"])
+                        
+                        # Remove temporary file
+                        os.unlink(temp_wav)
+                    except Exception as e:
+                        raise Exception(f"Failed to export as MP3: {str(e)}")
+                
+                QMessageBox.information(
+                    self, "Export Audio", 
+                    f"Audio exported successfully to:\n{filepath}"
+                )
+                
+                self.status_label.setText(f"Exported audio: {os.path.basename(filepath)}")
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"Failed to export audio: {str(e)}")
+    
+    def export_xml(self):
+        """Export the preset as an XML file"""
+        filepath, _ = QFileDialog.getSaveFileName(
+            self, "Export as XML", self.preset.name, "XML Files (*.xml)"
+        )
+        
+        if filepath:
+            try:
+                # Add .xml extension if missing
+                if not filepath.lower().endswith('.xml'):
+                    filepath += '.xml'
+                
+                # First save the preset as a temporary .sin file
+                temp_dir = tempfile.mkdtemp()
+                temp_sin = os.path.join(temp_dir, f"{self.preset.name}.sin")
+                self.preset.save_to_file(temp_sin)
+                
+                # Import the converter function
+                from preset_converter import convert_sin_to_xml
+                
+                # Convert and save as XML
+                result = convert_sin_to_xml(temp_sin, filepath)
+                
+                # Clean up temporary files
+                try:
+                    os.unlink(temp_sin)
+                    os.rmdir(temp_dir)
+                except:
+                    pass
+                
+                if result:
+                    QMessageBox.information(self, "Export XML", 
+                                          f"Preset exported successfully to XML format:\n{filepath}")
+                    self.status_label.setText(f"Exported XML: {os.path.basename(filepath)}")
+                else:
+                    QMessageBox.critical(self, "Error", "Failed to export preset as XML.")
+            except Exception as e:
+                QMessageBox.critical(self, "Error", f"Failed to export preset as XML: {str(e)}")
+    
+    def rename_preset(self):
+        """Rename the current preset"""
+        dialog = NameDialog(self.preset.name, parent=self)
+        if dialog.exec_():
+            name = dialog.get_name()
+            self.preset.name = name
+            self.preset_name_label.setText(name)
+    
+    def update_editors(self):
+        """Update the editors with the current preset data"""
+        self.entrainment_editor.curve = self.preset.entrainment_curve
+        self.volume_editor.curve = self.preset.volume_curve
+        self.base_freq_editor.curve = self.preset.base_freq_curve
+        
+        self.entrainment_editor.update()
+        self.volume_editor.update()
+        self.base_freq_editor.update()
+    
+    def update_duration(self):
+        """Update duration display based on current preset"""
+        duration = self.preset.get_duration()
+        minutes = int(duration) // 60
+        seconds = int(duration) % 60
+        self.duration_label.setText(f"Total Duration: {minutes}:{seconds:02d}")
+    
+    def get_current_audio(self):
+        """Get the current audio data for preview or use in the main application"""
+        return self.preset.generate_audio()
+
+# This allows running the SINE editor as a standalone application
+def main():
+    app = QApplication(sys.argv)
+    window = QMainWindow()
+    window.setWindowTitle("SINE Editor - Isochronic Tone Graph Editor")
+    window.setGeometry(100, 100, 900, 700)
+    
+    editor = SineEditorWidget()
+    window.setCentralWidget(editor)
+    window.show()
+    
+    sys.exit(app.exec_())
+
+if __name__ == "__main__":
+    main()

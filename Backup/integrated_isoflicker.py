@@ -1,0 +1,695 @@
+import sys
+import os
+import time
+import threading
+import json
+import numpy as np
+import tempfile
+import math
+
+# Check if PyQt5 is available or any other checks you have...
+
+import xml.etree.ElementTree as ET
+from preset_converter import validate_preset_file, xml_to_sine_preset, sine_preset_to_xml
+from file_optimizer import VideoOptimizer, CompressionDialog
+# Import the advanced generator modules
+from advanced_isochronic_generator import (
+    IsochronicToneGenerator, 
+    WaveformType, 
+    ModulationType
+)
+
+from PyQt5.QtCore import QObject, pyqtSignal, Qt
+from PyQt5.QtWidgets import (
+    QFileDialog, QMessageBox, QApplication, QMainWindow, 
+    QTabWidget, QWidget, QVBoxLayout
+)
+
+###############################################################################
+# Original FlickerWorker and related classes
+###############################################################################
+class FlickerWorker(QObject):
+    """Base worker class for flicker processing."""
+    progress_signal = pyqtSignal(int)
+    finished_signal = pyqtSignal(str)
+
+    def __init__(self, video_path, output_path, mode, config, isochronic_audio=None):
+        super().__init__()
+        # ... ORIGINAL CODE ...
+        self.video_path = video_path
+        self.output_path = output_path
+        self.mode = mode
+        self.config = config
+        self.isochronic_audio = isochronic_audio
+        # ... any other initialization ...
+
+    def process_video(self):
+        """Base process_video method (to be overridden)."""
+        # ... ORIGINAL CODE ...
+
+
+###############################################################################
+# EnhancedFlickerWorker with Compression Support
+###############################################################################
+class EnhancedFlickerWorker(FlickerWorker):
+    """Enhanced worker to handle optional compression after flicker processing."""
+
+    def __init__(self, video_path, output_path, mode, config, isochronic_audio=None):
+        super().__init__(video_path, output_path, mode, config, isochronic_audio)
+        self.compression_settings = None  # Optional compression settings
+
+    def process_video(self):
+        """Process the video, then apply optional compression."""
+        # 1. Do all the normal flicker processing steps...
+        # ... ORIGINAL CODE ...
+
+        output_file = self.output_path  # Assuming your final output is here
+        # Possibly you emit signals along the way...
+        # self.progress_signal.emit(50)  # example
+
+        # ... more processing code ...
+
+        # Emit final signals after normal processing
+        self.progress_signal.emit(100)
+        self.finished_signal.emit(output_file)
+
+        # Apply compression if requested
+        if self.compression_settings:
+            self.progress_signal.emit(90)
+            print(f"Applying compression to output file: {output_file}")
+            try:
+                if self.compression_settings.get('method') == 'quality':
+                    success = VideoOptimizer.replace_with_optimized(
+                        output_file,
+                        quality=self.compression_settings.get('quality', 23)
+                    )
+                else:
+                    success = VideoOptimizer.replace_with_optimized(
+                        output_file,
+                        target_size_mb=self.compression_settings.get('target_size_mb', 10)
+                    )
+
+                if success:
+                    print("Successfully compressed output file.")
+                else:
+                    print("Warning: Compression failed; using original file.")
+            except Exception as e:
+                print(f"Error during compression: {e}")
+
+
+###############################################################################
+# Process Video with SINE or Timeline Preset
+###############################################################################
+def process_video_with_sine_preset(parent, video_path, preset_path=None):
+    """
+    Process a video with a SINE preset (.sin or .xml)
+    
+    Args:
+        parent: Parent widget for dialogs
+        video_path: Path to the video file
+        preset_path: Optional path to preset file, if None, will prompt user
+    """
+    # If preset path is not provided, ask user to select one
+    if not preset_path:
+        preset_path, _ = QFileDialog.getOpenFileName(
+            parent, 
+            "Select SINE Preset",
+            "",
+            "SINE Preset Files (*.sin);;XML Preset Files (*.xml);;All Files (*)"
+        )
+        
+        if not preset_path:
+            return  # User cancelled
+    
+    try:
+        # Load the preset
+        preset = SinePreset.load_from_file(preset_path)
+        
+        # Generate isochronic audio
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
+            temp_audio = tmp.name
+        
+        audio_data, sample_rate = preset.generate_audio()
+        import soundfile as sf
+        sf.write(temp_audio, audio_data, sample_rate)
+        
+        # Show compression dialog
+        compression_settings = None
+        try:
+            compression_settings = CompressionDialog.show_dialog(parent)
+        except Exception as e:
+            print(f"Error showing compression dialog: {e}")
+        
+        # Get output path
+        output_dir = os.path.dirname(video_path)
+        base_name = os.path.splitext(os.path.basename(video_path))[0]
+        preset_name = os.path.splitext(os.path.basename(preset_path))[0]
+        default_output = os.path.join(output_dir, f"{base_name}_{preset_name}.mp4")
+        
+        output_path, _ = QFileDialog.getSaveFileName(
+            parent,
+            "Save Processed Video",
+            default_output,
+            "Video Files (*.mp4);;All Files (*)"
+        )
+        
+        if not output_path:
+            os.unlink(temp_audio)  # Clean up temp file
+            return  # User cancelled
+        
+        # Configure the worker
+        # Get processing options from UI (placeholder)
+        config = {
+            "flicker_rate": preset.get_avg_entrainment_freq(),
+            "intensity": 0.5,  # Default value, could be configurable
+            "use_audio": True,
+            "audio_sync": True,
+            # Add more options as needed
+        }
+        
+        # Create and start worker
+        worker = EnhancedFlickerWorker(
+            video_path=video_path,
+            output_path=output_path,
+            mode="flicker",
+            config=config,
+            isochronic_audio=temp_audio
+        )
+        
+        if compression_settings:
+            worker.compression_settings = compression_settings
+        
+        # Connect signals and start processing
+        # (This would be implemented based on your threading approach)
+        worker.process_video()
+        
+        # Clean up temp files when done
+        # (Should be done in a finally block or callback after processing)
+        
+    except Exception as e:
+        QMessageBox.critical(parent, "Error", f"Failed to process video with SINE preset: {str(e)}")
+
+
+
+###############################################################################
+# SinePreset class with full implementation
+###############################################################################
+class ControlPoint:
+    """Represents a control point on a curve"""
+    def __init__(self, time=0, value=0):
+        self.time = time
+        self.value = value
+        self.selected = False
+
+class Curve:
+    """Represents a curve with control points for frequency or volume"""
+    def __init__(self, min_value=0, max_value=1, default_value=0.5):
+        self.control_points = []
+        self.min_value = min_value
+        self.max_value = max_value
+        self.default_value = default_value
+        self.selected_point = None
+        
+        # Add default points at start and end
+        self.add_point(0, default_value)
+        self.add_point(180, default_value)  # 3 minutes default
+    
+    def add_point(self, time, value):
+        """Add a control point at the specified time and value"""
+        # Check if there's already a point at this time
+        for point in self.control_points:
+            if abs(point.time - time) < 0.01:
+                point.value = value
+                return point
+        
+        # Add new point and sort
+        new_point = ControlPoint(time, value)
+        self.control_points.append(new_point)
+        self.control_points.sort(key=lambda p: p.time)
+        return new_point
+    
+    def get_value_at_time(self, time):
+        """Get the interpolated value at a specific time"""
+        if not self.control_points:
+            return self.default_value
+        
+        # If time is before first point or after last point
+        if time <= self.control_points[0].time:
+            return self.control_points[0].value
+        if time >= self.control_points[-1].time:
+            return self.control_points[-1].value
+        
+        # Find the two points to interpolate between
+        for i in range(len(self.control_points) - 1):
+            if self.control_points[i].time <= time <= self.control_points[i + 1].time:
+                p1 = self.control_points[i]
+                p2 = self.control_points[i + 1]
+                
+                # Linear interpolation
+                t = (time - p1.time) / (p2.time - p1.time)
+                return p1.value + t * (p2.value - p1.value)
+        
+        return self.default_value
+    
+    def get_duration(self):
+        """Get the duration of the curve (time of last point)"""
+        if not self.control_points:
+            return 180  # Default 3 minutes
+        return self.control_points[-1].time
+
+
+class SinePreset:
+    """Represents a SINE-based preset with entrainment, volume, and base frequency curves."""
+    MIN_ENTRAINMENT_FREQ = 0.5
+    MAX_ENTRAINMENT_FREQ = 40.0
+    MIN_BASE_FREQ = 20.0
+    MAX_BASE_FREQ = 1000.0
+    DEFAULT_ENTRAINMENT_FREQ = 10.0
+    DEFAULT_BASE_FREQ = 100.0
+
+    def __init__(self, name="Default Preset"):
+        self.name = name
+        self.entrainment_curve = Curve(self.MIN_ENTRAINMENT_FREQ, self.MAX_ENTRAINMENT_FREQ, self.DEFAULT_ENTRAINMENT_FREQ)
+        self.volume_curve = Curve(0.0, 1.0, 0.5)
+        self.base_freq_curve = Curve(self.MIN_BASE_FREQ, self.MAX_BASE_FREQ, self.DEFAULT_BASE_FREQ)
+        
+        # Add modulation settings
+        self.carrier_type = WaveformType.SINE  # Default carrier wave type
+        self.modulation_type = ModulationType.SQUARE  # Default modulation type (on/off)
+    
+    def get_duration(self):
+        """Get the maximum duration of all curves"""
+        return max(
+            self.entrainment_curve.get_duration(),
+            self.volume_curve.get_duration(),
+            self.base_freq_curve.get_duration(),
+            180  # Minimum 3 minutes
+        )
+    
+    def get_avg_entrainment_freq(self):
+        """Calculate the average entrainment frequency"""
+        if not self.entrainment_curve.control_points:
+            return self.DEFAULT_ENTRAINMENT_FREQ
+        
+        total = sum(p.value for p in self.entrainment_curve.control_points)
+        return total / len(self.entrainment_curve.control_points)
+    
+    def generate_audio(self, sample_rate=44100):
+        """Generate the audio for this preset"""
+        duration = self.get_duration()
+        if duration <= 0:
+            return np.array([]), sample_rate
+        
+        # Generate time array
+        num_samples = int(sample_rate * duration)
+        t = np.linspace(0, duration, num_samples, endpoint=False)
+        
+        # Create output array
+        output = np.zeros(num_samples)
+        
+        # Create tone generator
+        tone_generator = IsochronicToneGenerator()
+        
+        # Process in small chunks to handle varying parameters
+        chunk_size = int(0.01 * sample_rate)  # 10ms chunks
+        for i in range(0, num_samples, chunk_size):
+            end_idx = min(i + chunk_size, num_samples)
+            chunk_t = t[i:end_idx]
+            
+            # Get current time in seconds
+            current_time = chunk_t[0]
+            
+            # Look up parameters at this time
+            entrainment_freq = self.entrainment_curve.get_value_at_time(current_time)
+            volume = self.volume_curve.get_value_at_time(current_time)
+            base_freq = self.base_freq_curve.get_value_at_time(current_time)
+            
+            # Generate chunk using advanced tone generator with modulation options
+            chunk_output = tone_generator.generate_tone_segment(
+                duration=len(chunk_t)/sample_rate,
+                carrier_freq=base_freq,
+                entrainment_freq=entrainment_freq,
+                volume=volume,
+                sample_rate=sample_rate,
+                carrier_type=self.carrier_type,
+                modulation_type=self.modulation_type
+            )
+            
+            # Add to output (make sure lengths match)
+            if len(chunk_output) == len(chunk_t):
+                output[i:end_idx] = chunk_output
+            else:
+                # Resample if needed
+                output[i:end_idx] = chunk_output[:len(chunk_t)]
+        
+        # Apply fade in/out (10ms fade)
+        fade_samples = min(int(0.01 * sample_rate), num_samples // 10)
+        if fade_samples > 0:
+            # Fade in
+            output[:fade_samples] *= np.linspace(0, 1, fade_samples)
+            # Fade out
+            output[-fade_samples:] *= np.linspace(1, 0, fade_samples)
+            
+        # Normalize to prevent clipping
+        max_amp = np.max(np.abs(output))
+        if max_amp > 0.9:  # If close to clipping
+            output = output * (0.9 / max_amp)
+        
+        return output, sample_rate
+    
+    def generate_looped_audio(self, target_duration, sample_rate=44100):
+        """Generate audio that loops to match the target duration"""
+        # Generate the base audio
+        audio_data, sr = self.generate_audio(sample_rate)
+        
+        # Calculate current audio duration
+        audio_duration = len(audio_data) / sr
+        
+        # If audio is already longer than target, just return it
+        if audio_duration >= target_duration:
+            return audio_data, sr
+        
+        # Calculate how many times to repeat
+        repeats = int(math.ceil(target_duration / audio_duration))
+        
+        # Create looped audio
+        looped_audio = np.tile(audio_data, repeats)
+        
+        # Trim to exact duration
+        samples_needed = int(target_duration * sr)
+        if len(looped_audio) > samples_needed:
+            looped_audio = looped_audio[:samples_needed]
+        
+        return looped_audio, sr
+    
+    def save_to_file(self, filepath):
+        """Save preset to a .sin file"""
+        data = {
+            "name": self.name,
+            "entrainment_points": [{"time": p.time, "value": p.value} for p in self.entrainment_curve.control_points],
+            "volume_points": [{"time": p.time, "value": p.value} for p in self.volume_curve.control_points],
+            "base_freq_points": [{"time": p.time, "value": p.value} for p in self.base_freq_curve.control_points],
+            "carrier_type": self.carrier_type.value if hasattr(self.carrier_type, 'value') else str(self.carrier_type),
+            "modulation_type": self.modulation_type.value if hasattr(self.modulation_type, 'value') else str(self.modulation_type)
+        }
+        
+        with open(filepath, 'w') as f:
+            json.dump(data, f, indent=2)
+    
+    @classmethod
+    def load_from_file(cls, filepath):
+        """
+        Load preset from a file (.sin or .xml).
+        Using preset_converter.validate_preset_file() to detect file type,
+        and preset_converter.xml_to_sine_preset() to convert XML if needed.
+        """
+        try:
+            # Check the file type
+            is_valid, format_type = validate_preset_file(filepath)
+            if not is_valid:
+                raise ValueError(f"Invalid preset file: {filepath}")
+
+            if format_type == "xml":
+                # Convert XML preset to SINE format
+                preset_data = xml_to_sine_preset(filepath)
+                
+                # Create a new preset
+                preset = cls(name=preset_data.get("name", "Imported Preset"))
+                
+                # Clear default points
+                preset.entrainment_curve.control_points = []
+                preset.volume_curve.control_points = []
+                preset.base_freq_curve.control_points = []
+                
+                # Add points from XML
+                for point_data in preset_data.get("entrainment_points", []):
+                    preset.entrainment_curve.add_point(point_data["time"], point_data["value"])
+                
+                for point_data in preset_data.get("volume_points", []):
+                    preset.volume_curve.add_point(point_data["time"], point_data["value"])
+                
+                for point_data in preset_data.get("base_freq_points", []):
+                    preset.base_freq_curve.add_point(point_data["time"], point_data["value"])
+                
+                return preset
+
+            elif format_type == "json":
+                # Load as normal JSON file
+                with open(filepath, 'r') as f:
+                    data = json.load(f)
+                
+                preset = cls(name=data.get("name", "Imported Preset"))
+                
+                # Clear default points
+                preset.entrainment_curve.control_points = []
+                preset.volume_curve.control_points = []
+                preset.base_freq_curve.control_points = []
+                
+                # Load entrainment points
+                for point_data in data.get("entrainment_points", []):
+                    preset.entrainment_curve.add_point(point_data["time"], point_data["value"])
+                
+                # Load volume points
+                for point_data in data.get("volume_points", []):
+                    preset.volume_curve.add_point(point_data["time"], point_data["value"])
+                
+                # Load base frequency points
+                for point_data in data.get("base_freq_points", []):
+                    preset.base_freq_curve.add_point(point_data["time"], point_data["value"])
+                
+                # Load modulation settings if available
+                carrier_type_str = data.get("carrier_type", "sine")
+                modulation_type_str = data.get("modulation_type", "square")
+                
+                # Parse carrier type
+                try:
+                    preset.carrier_type = WaveformType(carrier_type_str)
+                except (ValueError, TypeError):
+                    preset.carrier_type = WaveformType.SINE
+                
+                # Parse modulation type
+                try:
+                    preset.modulation_type = ModulationType(modulation_type_str)
+                except (ValueError, TypeError):
+                    preset.modulation_type = ModulationType.SQUARE
+                
+                return preset
+            else:
+                raise ValueError(f"Unsupported preset file format: {format_type}")
+
+        except Exception as e:
+            print(f"Error loading preset file: {e}")
+            raise
+
+
+###############################################################################
+# SineEditorWidget interface class for integration with main app
+###############################################################################
+class SineEditorWidget(QObject):
+    """Interface for the SINE Editor widget."""
+    
+    preset_changed = pyqtSignal()
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.preset = SinePreset()
+        self.current_file_path = None
+    
+    def open_preset(self):
+        """
+        Opens a file dialog to load a preset (.sin or .xml).
+        """
+        filepath, _ = QFileDialog.getOpenFileName(
+            self.parent(),
+            "Open Preset",
+            "",
+            "All Preset Files (*.sin *.xml);;SINE Preset Files (*.sin);;XML Preset Files (*.xml);;All Files (*)"
+        )
+        
+        if filepath:
+            try:
+                self.preset = SinePreset.load_from_file(filepath)
+                self.current_file_path = filepath
+                self.preset_changed.emit()
+                return True
+            except Exception as e:
+                QMessageBox.critical(self.parent(), "Error", f"Failed to open preset: {str(e)}")
+                return False
+        return False
+    
+    def save_preset(self, filepath=None):
+        """
+        Save preset to a file.
+        
+        Args:
+            filepath: Path to save to. If None, will use current_file_path or prompt for location.
+        """
+        if filepath is None:
+            if self.current_file_path:
+                filepath = self.current_file_path
+            else:
+                filepath, _ = QFileDialog.getSaveFileName(
+                    self.parent(),
+                    "Save Preset As",
+                    self.preset.name,
+                    "SINE Preset Files (*.sin)"
+                )
+                
+                if not filepath:
+                    return False
+        
+        try:
+            # Add extension if missing
+            if not filepath.lower().endswith('.sin'):
+                filepath += '.sin'
+                
+            self.preset.save_to_file(filepath)
+            self.current_file_path = filepath
+            return True
+        except Exception as e:
+            QMessageBox.critical(self.parent(), "Error", f"Failed to save preset: {str(e)}")
+            return False
+    
+    def export_as_xml(self, filepath=None):
+        """
+        Export the preset as an XML file.
+        
+        Args:
+            filepath: Path to save to. If None, will prompt for location.
+        """
+        if filepath is None:
+            filepath, _ = QFileDialog.getSaveFileName(
+                self.parent(),
+                "Export as XML",
+                self.preset.name,
+                "XML Files (*.xml)"
+            )
+            
+            if not filepath:
+                return False
+        
+        try:
+            # Add .xml extension if missing
+            if not filepath.lower().endswith('.xml'):
+                filepath += '.xml'
+            
+            # First create preset data dict
+            preset_data = {
+                "name": self.preset.name,
+                "entrainment_points": [{"time": p.time, "value": p.value} 
+                                      for p in self.preset.entrainment_curve.control_points],
+                "volume_points": [{"time": p.time, "value": p.value} 
+                                 for p in self.preset.volume_curve.control_points],
+                "base_freq_points": [{"time": p.time, "value": p.value} 
+                                    for p in self.preset.base_freq_curve.control_points]
+            }
+            
+            # Convert and save as XML
+            result = sine_preset_to_xml(preset_data, filepath)
+            
+            return result
+        except Exception as e:
+            QMessageBox.critical(self.parent(), "Error", f"Failed to export preset as XML: {str(e)}")
+            return False
+    
+    def get_current_audio(self, sample_rate=44100):
+        """
+        Get the current audio data for preview or use in the main application.
+        
+        Returns:
+            tuple: (audio_data, sample_rate)
+        """
+        return self.preset.generate_audio(sample_rate)
+
+
+###############################################################################
+# Integrated IsoFlicker Pro Application with SINE and Timeline Editors
+###############################################################################
+class IntegratedIsoFlickerApp(QMainWindow):
+    """Main application that integrates both editors and the basic mode"""
+    
+    def __init__(self):
+        super().__init__()
+        self.setWindowTitle("IsoFlicker Pro - Entrainment Toolkit")
+        self.setGeometry(100, 100, 1000, 800)
+        self.setup_ui()
+        
+    def setup_ui(self):
+        # Import needed widgets here to ensure they're available
+        from PyQt5.QtWidgets import QTabWidget, QWidget, QVBoxLayout, QLabel
+        
+        # Create main tab widget
+        self.tabs = QTabWidget()
+        
+        try:
+            # Import the basic GUI
+            from isoFlickerGUI import MainWindow as BasicModeWindow
+            
+            # Import the SINE editor
+            from sine_editor_with_xml import SineEditorWidget
+            
+            # Create the basic mode tab
+            self.basic_mode = BasicModeWindow()
+            self.basic_mode.original_window = self  # Set reference to main window
+            
+            # Create the SINE editor tab
+            sine_container = QWidget()
+            sine_layout = QVBoxLayout()
+            self.sine_editor = SineEditorWidget()
+            self.sine_editor.original_window = self.basic_mode  # Add reference to basic mode
+            sine_layout.addWidget(self.sine_editor)
+            sine_container.setLayout(sine_layout)
+            
+            # Add tabs
+            self.tabs.addTab(self.basic_mode, "Basic Mode")
+            self.tabs.addTab(sine_container, "SINE Editor")
+            
+            # Add process buttons for each editor type (can be implemented in their respective widgets too)
+            
+            # Set the central widget
+            self.setCentralWidget(self.tabs)
+            
+        except Exception as e:
+            import traceback
+            error_details = traceback.format_exc()
+            print(f"Error setting up UI: {e}\n{error_details}")
+            # Show error in UI
+            from PyQt5.QtWidgets import QLabel, QVBoxLayout, QWidget
+            error_widget = QWidget()
+            error_layout = QVBoxLayout()
+            error_layout.addWidget(QLabel(f"Error initializing application:\n{str(e)}"))
+            error_widget.setLayout(error_layout)
+            self.setCentralWidget(error_widget)
+
+###############################################################################
+# Main function or entry point if running this file directly
+###############################################################################
+def main():
+    """Main entry point for IsoFlicker Pro."""
+    try:
+        print("[+] Starting Integrated IsoFlicker Pro...")
+        
+        # Create the application
+        app = QApplication(sys.argv)
+        
+        # Create the main window
+        window = IntegratedIsoFlickerApp()
+        window.show()
+        
+        # Run the event loop
+        return app.exec_()
+        
+    except ImportError as e:
+        print(f"[!] Import Error: {e}")
+        print("[!] Make sure all required libraries are installed")
+        input("Press Enter to exit...")
+        return 1
+    except Exception as e:
+        print(f"[!] Unexpected Error: {e}")
+        import traceback
+        traceback.print_exc()
+        input("Press Enter to exit...")
+        return 1
+
+if __name__ == "__main__":
+    sys.exit(main())

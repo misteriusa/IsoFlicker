@@ -1,0 +1,747 @@
+import sys
+import os
+from PyQt5.QtWidgets import (
+    QApplication, QMainWindow, QTabWidget, QMessageBox,
+    QFileDialog, QVBoxLayout, QWidget, QPushButton, QHBoxLayout,
+    QLabel, QComboBox, QDialog, QCheckBox
+)
+from PyQt5.QtCore import Qt, QThread, pyqtSignal
+
+# Check if the required modules exist before importing
+try:
+    # Import the original app components
+    from isoFlickerGUI import MainWindow as OriginalMainWindow, FlickerWorker, generate_isochronic_tone
+    
+    # Import our new timeline editor
+    from isochronic_timeline import IsochronicEditorWidget
+    
+    # Try to import SINE editor integration
+    try:
+        from sine_editor import SinePreset
+        SINE_EDITOR_AVAILABLE = True
+    except ImportError:
+        SINE_EDITOR_AVAILABLE = False
+        
+    # Ensure other imports are available
+    import numpy as np
+    import soundfile as sf
+    import tempfile
+except ImportError as e:
+    print(f"Import Error: {e}")
+    print("Make sure all required modules are installed and in the correct path.")
+    sys.exit(1)
+
+
+class EnhancedFlickerWorker(FlickerWorker):
+    """Enhanced worker for processing videos with isochronic preset audio"""
+    
+    def __init__(self, video_path, output_path, mode, config, isochronic_audio=None):
+        super().__init__(video_path, output_path, mode, config)
+        self.isochronic_audio = isochronic_audio
+        self.isochronic_sr = 44100  # Default sample rate for isochronic audio
+    
+    def process_video(self):
+        video_clip = None
+        final_clip = None
+        temp_dir = None
+        try:
+            # Create temporary directory for intermediate files
+            temp_dir = tempfile.mkdtemp()
+            temp_audio_path = os.path.join(temp_dir, "temp_audio.wav")
+            
+            # Load the original video
+            from moviepy.editor import VideoFileClip, AudioFileClip, CompositeAudioClip
+            print(f"Loading video from: {self.video_path}")
+            if not os.path.exists(self.video_path):
+                raise FileNotFoundError(f"Video file not found: {self.video_path}")
+                
+            video_clip = VideoFileClip(self.video_path)
+            if not video_clip:
+                raise Exception("Failed to load video file")
+            
+            # Handle audio processing
+            if self.isochronic_audio is not None:
+                # Use the provided isochronic audio
+                self.progress_signal.emit(10)
+                
+                # Save isochronic audio to temp file
+                sf.write(temp_audio_path, self.isochronic_audio[0], self.isochronic_audio[1])
+                
+                # Load as audio clip
+                isochronic_clip = AudioFileClip(temp_audio_path)
+                
+                # Mix with original audio if requested
+                if self.config["mix_with_original"] and video_clip.audio is not None:
+                    original_audio = video_clip.audio
+                    mixed_audio = CompositeAudioClip([
+                        original_audio.volumex(self.config["original_volume"]),
+                        isochronic_clip.volumex(self.config["tone_volume"])
+                    ])
+                    final_audio = mixed_audio
+                else:
+                    final_audio = isochronic_clip
+            else:
+                # Use the standard audio entrainment method
+                if self.config["use_audio_entrainment"]:
+                    # Generate isochronic tone
+                    self.progress_signal.emit(10)
+                    duration = video_clip.duration
+                    sample_rate = 44100  # Standard audio sample rate
+                    
+                    # Use the original generating function
+                    from isoFlickerGUI import generate_isochronic_tone
+                    tone_data, sr = generate_isochronic_tone(
+                        self.config["tone_frequency"], 
+                        duration, 
+                        sample_rate, 
+                        self.config["tone_volume"]
+                    )
+                    
+                    # Write the tone to a temporary file
+                    sf.write(temp_audio_path, tone_data, sr)
+                    
+                    # Load the tone as an audio clip
+                    tone_clip = AudioFileClip(temp_audio_path)
+                    
+                    # Mix with original audio if requested
+                    if self.config["mix_with_original"] and video_clip.audio is not None:
+                        original_audio = video_clip.audio
+                        mixed_audio = CompositeAudioClip([
+                            original_audio.volumex(self.config["original_volume"]),
+                            tone_clip.volumex(self.config["tone_volume"])
+                        ])
+                        final_audio = mixed_audio
+                    else:
+                        final_audio = tone_clip
+                else:
+                    # Use original audio
+                    final_audio = video_clip.audio if video_clip.audio else None
+            
+            self.progress_signal.emit(20)
+            
+            # Process video frames with flicker effect (unchanged from original)
+            if self.config["use_visual_entrainment"]:
+                import math
+                from moviepy.video.io.ImageSequenceClip import ImageSequenceClip
+                
+                fps = video_clip.fps
+                frame_count = int(video_clip.duration * fps)
+                frames = []
+                
+                # Process each frame with the flicker effect
+                for i in range(frame_count):
+                    if i % 10 == 0:  # Update progress every 10 frames
+                        progress = 20 + int((i / frame_count) * 60)
+                        self.progress_signal.emit(progress)
+                    
+                    t = i / fps
+                    frame = video_clip.get_frame(t)
+                    
+                    # Apply flicker effect using sine wave at the specified frequency
+                    flicker_amp = self.config["flicker_amplitude"]
+                    flicker_freq = self.config["visual_frequency"]
+                    factor = 1.0 + flicker_amp * math.sin(2.0 * math.pi * flicker_freq * t)
+                    factor = max(0, factor)
+                    
+                    # Apply the brightness factor to the frame
+                    modified_frame = np.clip(frame.astype(np.float32) * factor, 0, 255).astype(np.uint8)
+                    frames.append(modified_frame)
+                
+                # Create a clip from the modified frames
+                flicker_video = ImageSequenceClip(frames, fps=fps)
+                final_clip = flicker_video.set_audio(final_audio) if final_audio else flicker_video
+            else:
+                # Use original video with potentially modified audio
+                final_clip = video_clip.set_audio(final_audio) if final_audio else video_clip
+            
+            self.progress_signal.emit(80)
+            
+            # Determine output format
+            codec = "ffv1" if self.mode == "ffv1" else "libx264"
+            ext = ".mkv" if self.mode == "ffv1" else ".mp4"
+            
+            base, _ = os.path.splitext(self.output_path)
+            output_file = base + ext
+            
+            # Write the final video
+            if final_clip:
+                final_clip.write_videofile(
+                    output_file,
+                    codec=codec,
+                    audio_codec="pcm_s16le" if self.mode == "ffv1" else "aac",
+                    threads=4,
+                    ffmpeg_params=["-crf", "0", "-preset", 
+                                  "ultrafast" if self.mode == "ffv1" else "medium"]
+                )
+            else:
+                raise Exception("Failed to create output video clip")
+            
+            # Clean up resources
+            if video_clip and video_clip.audio:
+                video_clip.audio.close()
+            if video_clip:
+                video_clip.close()
+            if final_clip:
+                final_clip.close()
+            
+            # Clean up temporary files
+            if temp_dir:
+                try:
+                    if os.path.exists(temp_audio_path):
+                        os.remove(temp_audio_path)
+                    os.rmdir(temp_dir)
+                except Exception as e:
+                    print(f"Warning: Failed to clean up temporary files: {e}")
+            
+            self.progress_signal.emit(100)
+            self.finished_signal.emit(output_file)
+        except Exception as e:
+            # Clean up resources in case of error
+            if video_clip and video_clip.audio:
+                try:
+                    video_clip.audio.close()
+                except:
+                    pass
+            if video_clip:
+                try:
+                    video_clip.close()
+                except:
+                    pass
+            if final_clip:
+                try:
+                    final_clip.close()
+                except:
+                    pass
+            
+            # Clean up temporary directory
+            if temp_dir and os.path.exists(temp_dir):
+                try:
+                    if os.path.exists(temp_audio_path):
+                        os.remove(temp_audio_path)
+                    os.rmdir(temp_dir)
+                except:
+                    pass
+            
+            import traceback
+            error_details = traceback.format_exc()
+            print(f"Error in process_video: {error_details}")
+            self.error_signal.emit(f"Error processing video: {str(e)}\n{error_details}")
+
+
+class PresetSelectorDialog(QDialog):
+    """Dialog for selecting preset options before processing"""
+    
+    def __init__(self, parent=None, preset_audio=None):
+        super().__init__(parent)
+        self.preset_audio = preset_audio
+        self.init_ui()
+        
+    def init_ui(self):
+        self.setWindowTitle("Isochronic Preset Options")
+        self.setGeometry(300, 300, 400, 250)
+        
+        layout = QVBoxLayout()
+        
+        # Option for using preset audio
+        self.use_preset_check = QCheckBox("Use Isochronic Preset Audio")
+        self.use_preset_check.setChecked(True)
+        layout.addWidget(self.use_preset_check)
+        
+        # Option for visual entrainment
+        visual_layout = QHBoxLayout()
+        self.use_visual_check = QCheckBox("Use Visual Entrainment")
+        self.use_visual_check.setChecked(True)
+        visual_layout.addWidget(self.use_visual_check)
+        
+        layout.addLayout(visual_layout)
+        
+        # Option for mixing with original audio
+        mix_layout = QHBoxLayout()
+        self.mix_original_check = QCheckBox("Mix with Original Audio")
+        self.mix_original_check.setChecked(True)
+        mix_layout.addWidget(self.mix_original_check)
+        layout.addLayout(mix_layout)
+        
+        # Buttons
+        button_layout = QHBoxLayout()
+        self.cancel_btn = QPushButton("Cancel")
+        self.cancel_btn.clicked.connect(self.reject)
+        
+        self.ok_btn = QPushButton("OK")
+        self.ok_btn.clicked.connect(self.accept)
+        self.ok_btn.setDefault(True)
+        
+        button_layout.addWidget(self.cancel_btn)
+        button_layout.addWidget(self.ok_btn)
+        
+        layout.addStretch()
+        layout.addLayout(button_layout)
+        
+        self.setLayout(layout)
+    
+    def get_config(self):
+        """Get the selected configuration"""
+        return {
+            "use_preset_audio": self.use_preset_check.isChecked(),
+            "use_visual_entrainment": self.use_visual_check.isChecked(),
+            "mix_with_original": self.mix_original_check.isChecked()
+        }
+
+
+class EnhancedMainWindow(QMainWindow):
+    """Enhanced main window with timeline editor integration"""
+    
+    def __init__(self):
+        super().__init__()
+        self.original_window = None
+        self.editor_widget = None
+        self.worker_threads = []  # Keep track of worker threads
+        self.init_ui()
+    
+    def init_ui(self):
+        self.setWindowTitle("IsoFlicker Pro - Advanced Entrainment Generator")
+        self.setGeometry(100, 100, 900, 700)
+        
+        # Create main tab widget
+        self.tabs = QTabWidget()
+        
+        # Create original interface tab
+        self.original_tab = QWidget()
+        original_layout = QVBoxLayout()
+        
+        try:
+            self.original_window = OriginalMainWindow()
+            # Modify the process button to use our enhanced processing
+            self.original_window.process_btn.clicked.disconnect()
+            self.original_window.process_btn.clicked.connect(self.process_from_original)
+            
+            original_layout.addWidget(self.original_window)
+            self.original_tab.setLayout(original_layout)
+        except Exception as e:
+            print(f"Error initializing original window: {e}")
+            import traceback
+            traceback.print_exc()
+            # Create fallback content for original tab
+            error_label = QLabel(f"Error loading original interface: {str(e)}")
+            original_layout.addWidget(error_label)
+            self.original_tab.setLayout(original_layout)
+        
+        # Create timeline editor tab
+        self.editor_tab = QWidget()
+        editor_layout = QVBoxLayout()
+        
+        try:
+            self.editor_widget = IsochronicEditorWidget()
+            editor_layout.addWidget(self.editor_widget)
+            
+            # Add button to process with timeline
+            process_layout = QHBoxLayout()
+            self.process_timeline_btn = QPushButton("Process Video with Timeline")
+            self.process_timeline_btn.clicked.connect(self.process_with_timeline)
+            process_layout.addWidget(self.process_timeline_btn)
+            
+            # Add SINE preset button if available
+            if SINE_EDITOR_AVAILABLE:
+                self.sine_preset_btn = QPushButton("Process Video with SINE Preset")
+                self.sine_preset_btn.clicked.connect(self.use_sine_preset)
+                process_layout.addWidget(self.sine_preset_btn)
+            
+            editor_layout.addLayout(process_layout)
+        except Exception as e:
+            print(f"Error initializing editor widget: {e}")
+            import traceback
+            traceback.print_exc()
+            # Create fallback content for editor tab
+            error_label = QLabel(f"Error loading timeline editor: {str(e)}")
+            editor_layout.addWidget(error_label)
+        
+        self.editor_tab.setLayout(editor_layout)
+        
+        # Add tabs to tab widget
+        self.tabs.addTab(self.original_tab, "Basic Mode")
+        self.tabs.addTab(self.editor_tab, "Timeline Editor")
+        
+        self.setCentralWidget(self.tabs)
+    
+    def closeEvent(self, event):
+        """Handle proper cleanup when the window is closed"""
+        # Wait for all worker threads to finish
+        for thread in self.worker_threads:
+            if thread.isRunning():
+                thread.wait()
+        
+        event.accept()
+    
+    def process_from_original(self):
+        """Process video using original interface but with enhanced worker"""
+        try:
+            # Get the original window instance
+            original = self.original_window
+            
+            # Check if a video is selected
+            if not original.video_path:
+                QMessageBox.warning(self, "No Video Selected", 
+                                "Please select a video file first.")
+                return
+                
+            if not os.path.exists(original.video_path):
+                QMessageBox.critical(self, "Error", 
+                                  f"Video file not found: {original.video_path}")
+                return
+            
+            # Create default output filename based on settings
+            prefix = original.prefix_edit.text() or "IsoFlicker"
+            freq = original.tone_freq_spin.value() if original.use_audio_check.isChecked() else original.visual_freq_spin.value()
+            default_name = f"{prefix}_{freq:.1f}Hz"
+            
+            # Get save location
+            output_path, _ = QFileDialog.getSaveFileName(
+                self, "Save Output Video", default_name, "Video Files (*.mp4 *.mkv)")
+            
+            if not output_path:
+                return
+                
+            original.progress_bar.setVisible(True)
+            original.progress_bar.setValue(0)
+            original.process_btn.setEnabled(False)
+            
+            config = original.get_config()
+            
+            # Use the enhanced worker
+            worker = EnhancedFlickerWorker(
+                original.video_path,
+                output_path,
+                original.format_combo.currentData(),
+                config
+            )
+            
+            # Keep track of the worker thread
+            self.worker_threads.append(worker)
+            
+            worker.progress_signal.connect(original.progress_bar.setValue)
+            worker.finished_signal.connect(lambda file: self.on_original_process_complete(file, worker))
+            worker.error_signal.connect(lambda error: self.on_original_process_error(error, worker))
+            worker.start()
+        except Exception as e:
+            print(f"Error in process_from_original: {e}")
+            import traceback
+            traceback.print_exc()
+            QMessageBox.critical(self, "Error", f"Failed to start processing: {str(e)}")
+            
+            # Re-enable the process button
+            if hasattr(self, 'original_window') and self.original_window:
+                self.original_window.process_btn.setEnabled(True)
+    
+    def on_original_process_complete(self, output_file, worker):
+        """Handle completion of original processing"""
+        try:
+            # Remove the worker from our tracked threads
+            if worker in self.worker_threads:
+                self.worker_threads.remove(worker)
+                
+            original = self.original_window
+            original.progress_bar.setVisible(False)
+            original.process_btn.setEnabled(True)
+            
+            QMessageBox.information(self, "Success",
+                                f"Video processed successfully!\nSaved to: {output_file}")
+        except Exception as e:
+            print(f"Error in on_original_process_complete: {e}")
+            import traceback
+            traceback.print_exc()
+    
+    def on_original_process_error(self, error_msg, worker):
+        """Handle error in original processing"""
+        try:
+            # Remove the worker from our tracked threads
+            if worker in self.worker_threads:
+                self.worker_threads.remove(worker)
+                
+            original = self.original_window
+            original.progress_bar.setVisible(False)
+            original.process_btn.setEnabled(True)
+            
+            QMessageBox.critical(self, "Error", error_msg)
+        except Exception as e:
+            print(f"Error in on_original_process_error: {e}")
+            import traceback
+            traceback.print_exc()
+    
+    def use_sine_preset(self):
+        """Use a SINE preset for processing"""
+        if not SINE_EDITOR_AVAILABLE:
+            QMessageBox.warning(self, "SINE Editor Not Available", 
+                              "SINE Editor integration is not available. Make sure sine_editor.py is in the same directory.")
+            return
+            
+        # Check if we have a video selected in the original tab
+        original = self.original_window
+        if not original.video_path:
+            QMessageBox.warning(self, "Missing Video", 
+                              "Please select a video file in the Basic Mode tab first.")
+            self.tabs.setCurrentIndex(0)  # Switch to first tab
+            return
+        
+        # Check if video file exists
+        if not os.path.exists(original.video_path):
+            QMessageBox.critical(self, "Error", 
+                              f"Video file not found: {original.video_path}")
+            return
+            
+        # Load a SINE preset
+        filepath, _ = QFileDialog.getOpenFileName(
+            self, "Open SINE Preset", "", 
+            "SINE Preset Files (*.sin);;All Files (*)"
+        )
+        
+        if not filepath:
+            return
+            
+        try:
+            # Load the preset
+            preset = SinePreset.load_from_file(filepath)
+            
+            # Generate audio in memory
+            preset_audio = preset.generate_audio()
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to load SINE preset: {str(e)}")
+            return
+            
+        # Show dialog to configure options
+        dialog = PresetSelectorDialog(self, preset_audio)
+        if dialog.exec_() != QDialog.Accepted:
+            return
+        
+        dialog_config = dialog.get_config()
+        
+        # Create default output filename based on preset
+        prefix = original.prefix_edit.text() or "IsoFlicker"
+        preset_name = os.path.splitext(os.path.basename(filepath))[0]
+        default_name = f"{prefix}_{preset_name}"
+        
+        # Get save location
+        output_path, _ = QFileDialog.getSaveFileName(
+            self, "Save Output Video", default_name, "Video Files (*.mp4 *.mkv)")
+        
+        if not output_path:
+            return
+        
+        # Prepare for processing
+        original.progress_bar.setVisible(True)
+        original.progress_bar.setValue(0)
+        original.process_btn.setEnabled(False)
+        self.process_timeline_btn.setEnabled(False)
+        if hasattr(self, 'sine_preset_btn'):
+            self.sine_preset_btn.setEnabled(False)
+        
+        # Get config from original window
+        config = original.get_config()
+        
+        # Override with dialog settings
+        config["use_visual_entrainment"] = dialog_config["use_visual_entrainment"]
+        config["mix_with_original"] = dialog_config["mix_with_original"]
+        
+        # Create enhanced worker with preset audio
+        worker = EnhancedFlickerWorker(
+            original.video_path,
+            output_path,
+            original.format_combo.currentData(),
+            config,
+            preset_audio if dialog_config["use_preset_audio"] else None
+        )
+        
+        # Keep track of the worker thread
+        self.worker_threads.append(worker)
+        
+        worker.progress_signal.connect(original.progress_bar.setValue)
+        worker.finished_signal.connect(lambda file: self.on_sine_process_complete(file, worker))
+        worker.error_signal.connect(lambda error: self.on_sine_process_error(error, worker))
+        worker.start()
+    
+    def on_sine_process_complete(self, output_file, worker):
+        """Handle completion of SINE preset processing"""
+        try:
+            # Remove the worker from our tracked threads
+            if worker in self.worker_threads:
+                self.worker_threads.remove(worker)
+                
+            original = self.original_window
+            original.progress_bar.setVisible(False)
+            original.process_btn.setEnabled(True)
+            self.process_timeline_btn.setEnabled(True)
+            if hasattr(self, 'sine_preset_btn'):
+                self.sine_preset_btn.setEnabled(True)
+            
+            QMessageBox.information(self, "Success",
+                                f"Video processed successfully with SINE preset!\nSaved to: {output_file}")
+        except Exception as e:
+            print(f"Error in on_sine_process_complete: {e}")
+            import traceback
+            traceback.print_exc()
+    
+    def on_sine_process_error(self, error_msg, worker):
+        """Handle error in SINE preset processing"""
+        try:
+            # Remove the worker from our tracked threads
+            if worker in self.worker_threads:
+                self.worker_threads.remove(worker)
+                
+            original = self.original_window
+            original.progress_bar.setVisible(False)
+            original.process_btn.setEnabled(True)
+            self.process_timeline_btn.setEnabled(True)
+            if hasattr(self, 'sine_preset_btn'):
+                self.sine_preset_btn.setEnabled(True)
+            
+            QMessageBox.critical(self, "Error", error_msg)
+        except Exception as e:
+            print(f"Error in on_sine_process_error: {e}")
+            import traceback
+            traceback.print_exc()
+    
+    def process_with_timeline(self):
+        """Process video using timeline preset"""
+        try:
+            # Check if we have a video selected in the original tab
+            original = self.original_window
+            if not original.video_path:
+                QMessageBox.warning(self, "Missing Video", 
+                                "Please select a video file in the Basic Mode tab first.")
+                self.tabs.setCurrentIndex(0)  # Switch to first tab
+                return
+            
+            # Check if video file exists
+            if not os.path.exists(original.video_path):
+                QMessageBox.critical(self, "Error", 
+                                  f"Video file not found: {original.video_path}")
+                return
+            
+            # Check if we have segments in the preset
+            if not self.editor_widget.preset.segments:
+                QMessageBox.warning(self, "Empty Preset", 
+                                "Please add at least one segment to the timeline.")
+                return
+            
+            # Generate the isochronic audio from the preset
+            preset_audio = self.editor_widget.get_current_audio()
+            
+            # Show dialog to configure options
+            dialog = PresetSelectorDialog(self, preset_audio)
+            if dialog.exec_() != QDialog.Accepted:
+                return
+            
+            dialog_config = dialog.get_config()
+            
+            # Create default output filename based on preset
+            prefix = original.prefix_edit.text() or "IsoFlicker"
+            preset_name = self.editor_widget.preset.name.replace(" ", "_")
+            default_name = f"{prefix}_{preset_name}"
+            
+            # Get save location
+            output_path, _ = QFileDialog.getSaveFileName(
+                self, "Save Output Video", default_name, "Video Files (*.mp4 *.mkv)")
+            
+            if not output_path:
+                return
+            
+            # Prepare for processing
+            original.progress_bar.setVisible(True)
+            original.progress_bar.setValue(0)
+            original.process_btn.setEnabled(False)
+            self.process_timeline_btn.setEnabled(False)
+            if hasattr(self, 'sine_preset_btn'):
+                self.sine_preset_btn.setEnabled(False)
+            
+            # Get config from original window
+            config = original.get_config()
+            
+            # Override with dialog settings
+            config["use_visual_entrainment"] = dialog_config["use_visual_entrainment"]
+            config["mix_with_original"] = dialog_config["mix_with_original"]
+            
+            # Create enhanced worker with preset audio
+            worker = EnhancedFlickerWorker(
+                original.video_path,
+                output_path,
+                original.format_combo.currentData(),
+                config,
+                preset_audio if dialog_config["use_preset_audio"] else None
+            )
+            
+            # Keep track of the worker thread
+            self.worker_threads.append(worker)
+            
+            worker.progress_signal.connect(original.progress_bar.setValue)
+            worker.finished_signal.connect(lambda file: self.on_timeline_process_complete(file, worker))
+            worker.error_signal.connect(lambda error: self.on_timeline_process_error(error, worker))
+            worker.start()
+        except Exception as e:
+            print(f"Error in process_with_timeline: {e}")
+            import traceback
+            traceback.print_exc()
+            QMessageBox.critical(self, "Error", f"Failed to start processing: {str(e)}")
+            
+            # Re-enable the process buttons
+            if hasattr(self, 'original_window') and self.original_window:
+                self.original_window.process_btn.setEnabled(True)
+            if hasattr(self, 'process_timeline_btn'):
+                self.process_timeline_btn.setEnabled(True)
+            if hasattr(self, 'sine_preset_btn'):
+                self.sine_preset_btn.setEnabled(True)
+    
+    def on_timeline_process_complete(self, output_file, worker):
+        """Handle completion of timeline processing"""
+        try:
+            # Remove the worker from our tracked threads
+            if worker in self.worker_threads:
+                self.worker_threads.remove(worker)
+                
+            original = self.original_window
+            original.progress_bar.setVisible(False)
+            original.process_btn.setEnabled(True)
+            self.process_timeline_btn.setEnabled(True)
+            if hasattr(self, 'sine_preset_btn'):
+                self.sine_preset_btn.setEnabled(True)
+            
+            QMessageBox.information(self, "Success",
+                                f"Video processed successfully with timeline preset!\nSaved to: {output_file}")
+        except Exception as e:
+            print(f"Error in on_timeline_process_complete: {e}")
+            import traceback
+            traceback.print_exc()
+    
+    def on_timeline_process_error(self, error_msg, worker):
+        """Handle error in timeline processing"""
+        try:
+            # Remove the worker from our tracked threads
+            if worker in self.worker_threads:
+                self.worker_threads.remove(worker)
+                
+            original = self.original_window
+            original.progress_bar.setVisible(False)
+            original.process_btn.setEnabled(True)
+            self.process_timeline_btn.setEnabled(True)
+            if hasattr(self, 'sine_preset_btn'):
+                self.sine_preset_btn.setEnabled(True)
+            
+            QMessageBox.critical(self, "Error", error_msg)
+        except Exception as e:
+            print(f"Error in on_timeline_process_error: {e}")
+            import traceback
+            traceback.print_exc()
+
+
+def main():
+    try:
+        app = QApplication(sys.argv)
+        window = EnhancedMainWindow()
+        window.show()
+        return app.exec_()
+    except Exception as e:
+        import traceback
+        print(f"Critical error: {e}\n{traceback.format_exc()}")
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())

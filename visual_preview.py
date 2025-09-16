@@ -1,0 +1,417 @@
+from PyQt5.QtWidgets import QWidget, QVBoxLayout, QLabel, QSizePolicy
+from PyQt5.QtGui import QPainter, QColor, QPen, QFont, QImage, QPixmap
+from PyQt5.QtCore import Qt, QTimer
+import math
+import traceback
+import os
+
+# Optional imports for grabbing a frame from video
+try:
+    from moviepy.editor import VideoFileClip  # type: ignore
+except Exception:
+    try:
+        from moviepy.video.io.VideoFileClip import VideoFileClip  # type: ignore
+    except Exception:
+        VideoFileClip = None
+
+try:
+    import cv2  # type: ignore
+except Exception:
+    cv2 = None
+
+def _ensure_ffmpeg_path():
+    """Point MoviePy/imageio to the bundled ffmpeg if present."""
+    try:
+        root = os.path.dirname(os.path.abspath(__file__))
+        # Common local ffmpeg folder in this repo
+        candidate = os.path.join(root, 'ffmpeg-7.1-full_build', 'bin', 'ffmpeg')
+        if os.name == 'nt':
+            candidate += '.exe'
+        if os.path.exists(candidate):
+            # For imageio-ffmpeg and MoviePy
+            os.environ.setdefault('IMAGEIO_FFMPEG_EXE', candidate)
+            os.environ.setdefault('FFMPEG_BINARY', candidate)
+    except Exception:
+        pass
+
+class VisualPreviewWidget(QWidget):
+    """Widget for previewing visual entrainment effects."""
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setMinimumHeight(180)
+        self.setMinimumWidth(320)
+        # Cap height so the widget doesn't overrun the window
+        self.setMaximumHeight(360)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
+        
+        # Set background color
+        self.setAutoFillBackground(True)
+        palette = self.palette()
+        palette.setColor(self.backgroundRole(), QColor(0, 0, 0))
+        self.setPalette(palette)
+        
+        # Initialize preview variables
+        self.frequency = 0
+        self.effect_type = "pulse"
+        self.is_preview_active = False
+        self.preview_timer = QTimer()
+        self.preview_timer.timeout.connect(self.update_preview)
+        self.frame_count = 0
+        self.current_color = QColor(255, 255, 255)
+        self._aspect_ratio = None  # width / height from selected video
+        self._overlay_alpha = 0.0   # 0..1 opacity for overlay effect
+        self._intensity = 0.5       # default overlay intensity
+        self._frame_pixmap = None   # QPixmap of the current video frame
+        # Full-motion playback state
+        self._video_mode = 'none'   # 'cv2' | 'moviepy' | 'none'
+        self._cap = None            # cv2.VideoCapture
+        self._clip = None           # moviepy VideoFileClip
+        self._fps = 24.0
+        self._frame_index = 0
+        self._num_frames = None
+        self._play_timer = QTimer()
+        self._play_timer.timeout.connect(self.update_playback)
+        
+        # Add info label
+        self.layout = QVBoxLayout()
+        self.info_label = QLabel("Visual Preview")
+        self.info_label.setStyleSheet("color: white;")
+        self.info_label.setAlignment(Qt.AlignCenter)
+        self.layout.addWidget(self.info_label)
+        self.setLayout(self.layout)
+
+    def set_video_dimensions(self, width, height):
+        """Set target aspect ratio from the selected video dimensions."""
+        try:
+            width = int(width)
+            height = int(height)
+            if width > 0 and height > 0:
+                self._aspect_ratio = float(width) / float(height)
+                # Trigger a resize to honor aspect
+                self.updateGeometry()
+                self.update()
+        except Exception:
+            self._aspect_ratio = None
+
+    def clear_video_frame(self):
+        """Clear any loaded video preview frame."""
+        self._frame_pixmap = None
+        self.update()
+
+    def set_video_source(self, path):
+        """Open a video for full-motion background preview and prime first frame."""
+        # Reset previous sources
+        try:
+            if self._cap is not None:
+                self._cap.release()
+        except Exception:
+            pass
+        self._cap = None
+        try:
+            if self._clip is not None:
+                self._clip.close()
+        except Exception:
+            pass
+        self._clip = None
+        self._video_mode = 'none'
+        self._frame_index = 0
+        self._num_frames = None
+        self._fps = 24.0
+
+        pix = None
+        # Prefer OpenCV for streaming
+        if cv2 is not None:
+            try:
+                cap = cv2.VideoCapture(path)
+                ok, frame = cap.read()
+                if ok and frame is not None:
+                    # Playback properties
+                    fps = cap.get(cv2.CAP_PROP_FPS)
+                    if fps and fps > 1:
+                        self._fps = float(fps)
+                    count = cap.get(cv2.CAP_PROP_FRAME_COUNT)
+                    if count and count > 0:
+                        try:
+                            self._num_frames = int(count)
+                        except Exception:
+                            self._num_frames = None
+                    # Convert first frame to pixmap
+                    frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                    h, w = frame.shape[:2]
+                    img = QImage(frame.data, w, h, w * 3, QImage.Format_RGB888)
+                    pix = QPixmap.fromImage(img.copy())
+                    if not self._aspect_ratio and w > 0 and h > 0:
+                        self._aspect_ratio = float(w) / float(h)
+                    self._cap = cap
+                    self._video_mode = 'cv2'
+                else:
+                    try:
+                        cap.release()
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+
+        # MoviePy fallback
+        if (self._video_mode == 'none') and (VideoFileClip is not None):
+            try:
+                _ensure_ffmpeg_path()
+                clip = VideoFileClip(path)
+                # Obtain fps and duration
+                try:
+                    if getattr(clip, 'fps', None):
+                        self._fps = float(clip.fps)
+                except Exception:
+                    pass
+                try:
+                    if getattr(clip, 'duration', None) and self._fps:
+                        self._num_frames = int(self._fps * float(clip.duration))
+                except Exception:
+                    pass
+                # First frame
+                frame = clip.get_frame(0.0)
+                h, w = frame.shape[0], frame.shape[1]
+                img = QImage(frame.data, w, h, w * 3, QImage.Format_RGB888)
+                pix = QPixmap.fromImage(img.copy())
+                if not self._aspect_ratio and w > 0 and h > 0:
+                    self._aspect_ratio = float(w) / float(h)
+                self._clip = clip
+                self._video_mode = 'moviepy'
+            except Exception:
+                try:
+                    if clip:
+                        clip.close()
+                except Exception:
+                    pass
+                self._clip = None
+                self._video_mode = 'none'
+
+        self._frame_pixmap = pix
+        self.update()
+
+    def update_playback(self):
+        """Advance video playback and repaint. Loops when reaching the end."""
+        try:
+            if self._video_mode == 'cv2' and self._cap is not None:
+                ok, frame = self._cap.read()
+                if not ok or frame is None:
+                    # loop to start
+                    try:
+                        self._cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                    except Exception:
+                        pass
+                    ok, frame = self._cap.read()
+                    if not ok or frame is None:
+                        return
+                frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                h, w = frame.shape[:2]
+                img = QImage(frame.data, w, h, w * 3, QImage.Format_RGB888)
+                self._frame_pixmap = QPixmap.fromImage(img.copy())
+                if not self._aspect_ratio and w > 0 and h > 0:
+                    self._aspect_ratio = float(w) / float(h)
+                self.update()
+            elif self._video_mode == 'moviepy' and self._clip is not None:
+                t = (self._frame_index / max(1.0, float(self._fps)))
+                try:
+                    dur = float(self._clip.duration) if getattr(self._clip, 'duration', None) else None
+                    if dur and t >= dur:
+                        self._frame_index = 0
+                        t = 0.0
+                except Exception:
+                    pass
+                try:
+                    frame = self._clip.get_frame(t)
+                except Exception:
+                    # loop on error
+                    self._frame_index = 0
+                    try:
+                        frame = self._clip.get_frame(0.0)
+                    except Exception:
+                        return
+                h, w = frame.shape[0], frame.shape[1]
+                img = QImage(frame.data, w, h, w * 3, QImage.Format_RGB888)
+                self._frame_pixmap = QPixmap.fromImage(img.copy())
+                if not self._aspect_ratio and w > 0 and h > 0:
+                    self._aspect_ratio = float(w) / float(h)
+                self._frame_index += 1
+                self.update()
+            else:
+                # no video source
+                pass
+        except Exception:
+            pass
+
+    def sizeHint(self):
+        # Suggest a size honoring aspect ratio if known
+        base = super().sizeHint()
+        if self._aspect_ratio and base.height() > 0:
+            return base
+        return base
+
+    def resizeEvent(self, event):
+        # Maintain aspect ratio by adjusting height based on width
+        if self._aspect_ratio and self._aspect_ratio > 0:
+            desired_h = max(1, int(self.width() / self._aspect_ratio))
+            # Honor maximum height cap
+            desired_h = min(desired_h, self.maximumHeight())
+            if abs(desired_h - self.height()) > 2:
+                # Use setMinimum/Maximum to avoid fighting layouts
+                self.setMinimumHeight(desired_h)
+                self.setMaximumHeight(desired_h)
+        return super().resizeEvent(event)
+    
+    def paintEvent(self, event):
+        """Draw the visual preview"""
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+        
+        # Draw background: video frame if available, else black
+        if self._frame_pixmap is not None and not self._frame_pixmap.isNull():
+            scaled = self._frame_pixmap.scaled(self.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            x = (self.width() - scaled.width()) // 2
+            y = (self.height() - scaled.height()) // 2
+            painter.drawPixmap(x, y, scaled)
+        else:
+            painter.fillRect(self.rect(), QColor(0, 0, 0))
+            # Hint when no video is attached
+            painter.setPen(QPen(QColor(200, 200, 200)))
+            painter.setFont(QFont("Arial", 10))
+            painter.drawText(10, 20, "No video attached — using black background")
+        
+        # Draw preview effect
+        if self.is_preview_active:
+            # Overlay flicker color with alpha so video remains visible
+            painter.setOpacity(max(0.0, min(1.0, self._overlay_alpha)))
+            painter.fillRect(self.rect(), self.current_color)
+            painter.setOpacity(1.0)
+        else:
+            # Draw static preview
+            width = self.width()
+            height = self.height()
+            
+            # Draw static representation of frequency
+            num_bars = min(10, max(2, int(self.frequency / 2)))
+            bar_width = width / num_bars
+            
+            for i in range(num_bars):
+                if i % 2 == 0:
+                    painter.fillRect(int(i * bar_width), 0, int(bar_width), height, QColor(200, 200, 200))
+                else:
+                    painter.fillRect(int(i * bar_width), 0, int(bar_width), height, QColor(50, 50, 50))
+            
+            # Show frequency info
+            painter.setPen(QPen(QColor(255, 255, 255)))
+            painter.setFont(QFont("Arial", 10))
+            painter.drawText(
+                10, 20, 
+                f"Freq: {self.frequency:.1f} Hz - {self.effect_type.capitalize()}"
+            )
+    
+    def update_preview(self):
+        """Update the preview animation"""
+        if not self.is_preview_active:
+            return
+            
+        # Calculate brightness based on time and frequency
+        if self.frequency <= 0:
+            self.frequency = 0.1  # Prevent division by zero
+            
+        # Update frame counter
+        self.frame_count += 1
+        
+        # Calculate pulse with sine wave (smoother)
+        # 24 frames per second (typical timer interval is ~40ms)
+        try:
+            denom = max(1, int(24 / float(self.frequency)))
+        except Exception:
+            denom = 1
+        phase = (self.frame_count % denom) / float(denom)
+        
+        if self.effect_type.lower() == "pulse":
+            # Simple on/off pulse
+            self.current_color = QColor(255, 255, 255)  # White overlay
+            self._overlay_alpha = self._intensity if phase < 0.5 else 0.0
+                
+        elif self.effect_type.lower() == "color_cycle" or self.effect_type.lower() == "color cycle":
+            # Color cycling effect
+            hue = (phase * 360) % 360
+            self.current_color = QColor.fromHsv(int(hue), 255, 255)
+            self._overlay_alpha = self._intensity
+            
+        elif self.effect_type.lower() == "flash":
+            # Graduated flash effect
+            b = abs(math.cos(phase * 2 * math.pi))
+            brightness = int(b * 255)
+            self.current_color = QColor(brightness, brightness, brightness)
+            self._overlay_alpha = self._intensity * b
+            
+        else:  # Default or "blur"
+            # Gradual fade effect
+            b = (math.sin(phase * 2 * math.pi) * 0.5 + 0.5)
+            brightness = int(b * 255)
+            self.current_color = QColor(brightness, brightness, brightness)
+            self._overlay_alpha = self._intensity * b
+        
+        # Update the widget
+        self.update()
+    
+    def start_preview(self, frequency=10.0, effect_type="pulse"):
+        """Start the preview animation"""
+        self.frequency = frequency
+        self.effect_type = effect_type
+        self.is_preview_active = True
+        self.frame_count = 0
+        
+        # Start timers - overlay ~24 fps, video at source fps
+        self.preview_timer.start(42)  # ~24 fps overlay
+        interval_ms = int(1000.0 / max(1.0, float(self._fps)))
+        interval_ms = max(15, min(100, interval_ms))  # clamp sane range
+        self._play_timer.start(interval_ms)
+        
+        # Update the info text
+        self.info_label.setText(f"Preview: {frequency:.1f} Hz")
+        
+        # Force redraw
+        self.update()
+    
+    def stop_preview(self):
+        """Stop the preview animation"""
+        self.is_preview_active = False
+        self.preview_timer.stop()
+        self._play_timer.stop()
+        
+        # Reset the info text
+        self.info_label.setText("Visual Preview")
+        
+        # Force redraw
+        self.update()
+    
+    def update_frequency(self, frequency):
+        """Update the preview frequency"""
+        self.frequency = frequency
+        
+        if self.is_preview_active:
+            self.info_label.setText(f"Preview: {frequency:.1f} Hz")
+        
+        # Force redraw
+        self.update()
+    
+    def show_static_preview(self, frequency):
+        """Show a static representation of the frequency"""
+        self.frequency = frequency
+        self.is_preview_active = False
+        
+        # Update label
+        self.info_label.setText(f"Static: {frequency:.1f} Hz")
+        
+        # Force redraw
+        self.update()
+
+    def set_intensity(self, intensity):
+        """Set overlay intensity 0..1"""
+        try:
+            self._intensity = max(0.0, min(1.0, float(intensity)))
+        except Exception:
+            self._intensity = 0.5
+        self.update()
