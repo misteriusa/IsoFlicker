@@ -22,11 +22,30 @@ const preset: Preset = {
   visual_phase_deg: 0,
   precision_note: "Exact at 120 Hz",
   rationale: "Robust ASSR",
-  expected: "Strong entrainment",
+  mechanism: "ASSR peaks near 40 Hz",
+  expected_effects: "Strong entrainment",
   safety_notes: "Keep volume comfortable",
+  safety_label: "Moderate SPL",
   max_volume_pct: 70,
   photosensitivity_flag: true,
-  citations: [8, 9]
+  citations: [1, 23],
+  audio_config: {
+    carrier: "pink-noise",
+    mod_rate_hz: 40,
+    depth: 1,
+    duty: 0.5,
+    window_ms: 5
+  },
+  visual_config: {
+    rate_hz: 40,
+    phase_deg: 0,
+    contrast: "moderate"
+  },
+  safety_config: {
+    max_volume_pct: 70,
+    photosensitivity_flag: true,
+    notes: "Keep volume comfortable"
+  }
 };
 
 describe("PresetCard", () => {

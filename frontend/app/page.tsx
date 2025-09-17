@@ -66,6 +66,14 @@ export default async function Page() {
             and be aware of photosensitivity risks between 3–60 Hz, especially 15–25 Hz high contrast.
           </p>
         </div>
+        <div className="flex flex-wrap gap-3">
+          <Button asChild variant="secondary">
+            <Link href="/hardware">Open hardware detector results</Link>
+          </Button>
+          <Button asChild variant="outline">
+            <Link href="/docs/safety">Safety guidance</Link>
+          </Button>
+        </div>
       </header>
       <Suspense fallback={<p className="text-slate-400">Loading presets…</p>}>
         <div className="space-y-12">

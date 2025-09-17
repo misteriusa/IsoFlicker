@@ -1,8 +1,8 @@
-"""SQLModel models for presets and logs."""
+"""SQLModel models for presets, logs, and hardware tests."""
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Optional
+from typing import Any, Optional
 
 from sqlalchemy import Column
 from sqlalchemy.dialects.sqlite import JSON
@@ -16,8 +16,9 @@ class Category(SQLModel, table=True):
     label: str
     description: str
 
+
 class Preset(SQLModel, table=True):
-    """Preset definition loaded from the default catalog."""
+    """Preset definition loaded from the catalog."""
 
     id: str = Field(primary_key=True, index=True)
     category: str = Field(foreign_key="category.id")
@@ -30,17 +31,20 @@ class Preset(SQLModel, table=True):
     carrier_hz: Optional[float] = Field(default=None)
     outer_envelope_rate: Optional[float] = Field(default=None)
     outer_envelope_depth: Optional[float] = Field(default=None)
-    phase_options_deg: Optional[list[int]] = Field(
-        sa_column=Column(JSON), default=None
-    )
+    phase_options_deg: Optional[list[int]] = Field(sa_column=Column(JSON), default=None)
     duration_minutes: Optional[float] = Field(default=None)
     visual_enabled: bool = Field(default=False)
     visual_rate_hz: Optional[float] = Field(default=None)
     visual_phase_deg: Optional[float] = Field(default=None)
     precision_note: Optional[str] = Field(default=None)
     rationale: str
-    expected: str
+    mechanism: Optional[str] = Field(default=None)
+    expected_effects: str
+    audio_config: dict[str, Any] = Field(sa_column=Column(JSON), default_factory=dict)
+    visual_config: dict[str, Any] = Field(sa_column=Column(JSON), default_factory=dict)
+    safety_label: Optional[str] = Field(default=None)
     safety_notes: str
+    safety_config: dict[str, Any] = Field(sa_column=Column(JSON), default_factory=dict)
     max_volume_pct: Optional[int] = Field(default=None)
     photosensitivity_flag: bool = Field(default=False)
     citations: list[int] = Field(sa_column=Column(JSON), default_factory=list)
@@ -61,4 +65,20 @@ class SessionLog(SQLModel, table=True):
     raw_path: Optional[str] = Field(default=None)
 
 
-__all__ = ["Category", "Preset", "SessionLog"]
+class HardwareProfile(SQLModel, table=True):
+    """Summary of acoustic modulation and latency metrics for a device."""
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    device_guid: str = Field(index=True)
+    friendly_name: str
+    form_factor: Optional[str] = Field(default=None)
+    mix_format: Optional[str] = Field(default=None)
+    mtf_pass_hz: Optional[float] = Field(default=None)
+    mtf_scores: dict[str, float] = Field(sa_column=Column(JSON), default_factory=dict)
+    latency_ms: Optional[float] = Field(default=None)
+    latency_jitter_ms: Optional[float] = Field(default=None)
+    tested_at: datetime = Field(default_factory=datetime.utcnow, index=True)
+    notes: Optional[str] = Field(default=None)
+
+
+__all__ = ["Category", "Preset", "SessionLog", "HardwareProfile"]

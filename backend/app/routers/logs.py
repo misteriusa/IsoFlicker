@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends
+from sqlalchemy import desc
 from sqlmodel import Session, select
 
 from ..database import get_session
@@ -26,7 +27,8 @@ def create_log(payload: SessionLogCreate, session: Session = Depends(get_session
 def list_logs(session: Session = Depends(get_session)) -> list[SessionLogRead]:
     """Return session logs ordered by newest first."""
 
-    logs = session.exec(select(SessionLog).order_by(SessionLog.started_at.desc())).all()
+    started_at_col = SessionLog.__table__.c.started_at  # type: ignore[attr-defined]
+    logs = session.exec(select(SessionLog).order_by(desc(started_at_col))).all()
     return [SessionLogRead.model_validate(item) for item in logs]
 
 

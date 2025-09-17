@@ -4,8 +4,8 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from backend.app.config import settings
-from backend.app.database import configure_engine, create_db_and_tables, get_session
+from backend.core.config import settings
+from backend.db.session import configure_engine, create_db_and_tables, get_session
 from backend.app.presets_loader import load_preset_catalog, populate_presets
 
 

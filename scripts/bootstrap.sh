@@ -12,6 +12,9 @@ pip install --upgrade pip
 pip install -r requirements.txt || true  # legacy app deps if needed
 pip install -e backend[test]
 
+# Run database migrations (defaults to SQLite unless ISOFLICKER_DATABASE_URL is set)
+alembic -c backend/alembic.ini upgrade head || true
+
 # Install frontend dependencies
 pushd frontend >/dev/null
 npm install

@@ -1,4 +1,4 @@
-export type PresetCategory = "A" | "B";
+export type PresetCategory = "A" | "B" | "E";
 
 export interface Preset {
   id: string;
@@ -19,8 +19,13 @@ export interface Preset {
   visual_phase_deg?: number | null;
   precision_note?: string | null;
   rationale: string;
-  expected: string;
+  mechanism?: string | null;
+  expected_effects: string;
   safety_notes: string;
+  safety_label?: string | null;
+  audio_config: Record<string, unknown>;
+  visual_config: Record<string, unknown>;
+  safety_config: Record<string, unknown>;
   max_volume_pct?: number | null;
   photosensitivity_flag: boolean;
   citations: number[];

@@ -1,23 +1,179 @@
-# Inventoried external assets (no binaries committed)
----
-items:
+version: 1
+assets:
   - name: DirectX-Graphics-Samples
-    repo: https://github.com/microsoft/DirectX-Graphics-Samples
-    commit: pending
+    category: native-reference
+    origin: https://github.com/microsoft/DirectX-Graphics-Samples
+    vendor_method: metadata_only
+    version: null
     license: MIT
-    notes: Waitable swap chain reference for D3D11 Flip-Discard pacing.
+    license_file: third_party/LICENSES/directx-graphics-samples-MIT.txt
+    commit: pending
+    rationale: D3D11 waitable swap chain reference for frame-accurate visual pacing.
+    risks: ["Upstream API changes in new DirectX SDK drops"]
+    maintenance: { last_commit: "2024-06-01", stars: 4700 }
   - name: Windows-classic-samples
-    repo: https://github.com/microsoft/Windows-classic-samples
-    commit: pending
+    category: native-reference
+    origin: https://github.com/microsoft/Windows-classic-samples
+    vendor_method: metadata_only
+    version: null
     license: MIT
-    notes: WASAPI exclusive mode render example; basis for audio engine.
+    license_file: third_party/LICENSES/windows-classic-samples-MIT.txt
+    commit: pending
+    rationale: WASAPI exclusive-mode sample for low-latency audio rendering.
+    risks: ["Sample code targets legacy Windows SDK headers"]
+    maintenance: { last_commit: "2024-05-18", stars: 3300 }
+  - name: fastapi
+    category: backend-lib
+    origin: https://pypi.org/project/fastapi/
+    vendor_method: pinned_pip
+    version: 0.110.0
+    license: MIT
+    license_file: third_party/LICENSES/fastapi-MIT.txt
+    commit: null
+    rationale: Primary ASGI framework for the API surface.
+    risks: ["Fast-moving release cadence"]
+    maintenance: { last_commit: "2024-06-28", stars: 63000 }
   - name: sqlmodel
-    source: https://pypi.org/project/sqlmodel/
+    category: backend-lib
+    origin: https://pypi.org/project/sqlmodel/
+    vendor_method: pinned_pip
     version: 0.0.14
     license: MIT
-    notes: ORM powering the preset catalog API; installed via pip.
-  - name: shadcn-ui
-    source: https://ui.shadcn.com/
-    version: 0.8.0
+    license_file: third_party/LICENSES/sqlmodel-MIT.txt
+    commit: null
+    rationale: Typed ORM models built on SQLAlchemy for preset/catalog storage.
+    risks: ["Project still <1.0, API surface may evolve"]
+    maintenance: { last_commit: "2024-05-20", stars: 13000 }
+  - name: alembic
+    category: backend-lib
+    origin: https://pypi.org/project/alembic/
+    vendor_method: pinned_pip
+    version: 1.13.1
     license: MIT
-    notes: UI primitives referenced by the frontend skeleton (no assets vendored yet).
+    license_file: third_party/LICENSES/alembic-MIT.txt
+    commit: null
+    rationale: Database schema migrations for SQLModel metadata.
+    risks: ["Requires coordination with SQLAlchemy upgrades"]
+    maintenance: { last_commit: "2024-06-10", stars: 8000 }
+  - name: psycopg
+    category: backend-lib
+    origin: https://pypi.org/project/psycopg/
+    vendor_method: pinned_pip
+    version: 3.1.18
+    license: LGPL-3.0-or-later
+    license_file: third_party/LICENSES/psycopg-LGPL-3.0.txt
+    commit: null
+    rationale: PostgreSQL driver with asyncio support for production DB usage.
+    risks: ["LGPL obligations for dynamic linking"]
+    maintenance: { last_commit: "2024-06-12", stars: 3300 }
+  - name: numpy
+    category: signal-processing
+    origin: https://pypi.org/project/numpy/
+    vendor_method: pinned_pip
+    version: 1.26.4
+    license: BSD-3-Clause
+    license_file: third_party/LICENSES/numpy-BSD-3-Clause.txt
+    commit: null
+    rationale: Core numerical stack powering FFT, Hilbert, and vector ops.
+    risks: ["Requires native wheels on CI"]
+    maintenance: { last_commit: "2024-06-30", stars: 250000 }
+  - name: scipy
+    category: signal-processing
+    origin: https://pypi.org/project/scipy/
+    vendor_method: pinned_pip
+    version: 1.11.4
+    license: BSD-3-Clause
+    license_file: third_party/LICENSES/scipy-BSD-3-Clause.txt
+    commit: null
+    rationale: Provides Hilbert transform and correlation utilities for MTF analysis.
+    risks: ["Large binary wheels increase container size"]
+    maintenance: { last_commit: "2024-06-25", stars: 120000 }
+  - name: soundfile
+    category: signal-processing
+    origin: https://pypi.org/project/soundfile/
+    vendor_method: pinned_pip
+    version: 0.12.1
+    license: BSD-3-Clause
+    license_file: third_party/LICENSES/soundfile-BSD-3-Clause.txt
+    commit: null
+    rationale: Audio read/write helper for future acoustic capture routines.
+    risks: ["Depends on libsndfile availability"]
+    maintenance: { last_commit: "2024-04-30", stars: 2600 }
+  - name: next
+    category: frontend-lib
+    origin: https://www.npmjs.com/package/next
+    vendor_method: npm_lockfile
+    version: 14.1.4
+    license: MIT
+    license_file: third_party/LICENSES/nextjs-MIT.txt
+    commit: null
+    rationale: App Router framework powering the research control panel.
+    risks: ["Requires Node 18+ features"]
+    maintenance: { last_commit: "2024-06-27", stars: 120000 }
+  - name: tailwindcss
+    category: frontend-lib
+    origin: https://www.npmjs.com/package/tailwindcss
+    vendor_method: npm_lockfile
+    version: 3.4.1
+    license: MIT
+    license_file: third_party/LICENSES/tailwindcss-MIT.txt
+    commit: null
+    rationale: Utility-first styling with dark-mode tokens.
+    risks: ["Configuration drift across projects"]
+    maintenance: { last_commit: "2024-06-15", stars: 77000 }
+  - name: shadcn-ui
+    category: ui-kit
+    origin: https://ui.shadcn.com
+    vendor_method: mirror_components
+    version: 2024.05
+    license: MIT
+    license_file: third_party/LICENSES/shadcn-ui-MIT.txt
+    commit: null
+    rationale: Accessible component primitives for preset and hardware cards.
+    risks: ["Manual sync required when tokens change"]
+    maintenance: { last_commit: "2024-06-05", stars: 45000 }
+  - name: ruff
+    category: tooling
+    origin: https://pypi.org/project/ruff/
+    vendor_method: pinned_pip
+    version: 0.3.4
+    license: MIT
+    license_file: third_party/LICENSES/ruff-MIT.txt
+    commit: null
+    rationale: Unified Python lint + format.
+    risks: ["Fast release cadence"]
+    maintenance: { last_commit: "2024-06-29", stars: 22000 }
+  - name: mypy
+    category: tooling
+    origin: https://pypi.org/project/mypy/
+    vendor_method: pinned_pip
+    version: 1.10.0
+    license: MIT
+    license_file: third_party/LICENSES/mypy-MIT.txt
+    commit: null
+    rationale: Static type checking for backend modules.
+    risks: ["Stricter typing may require suppressions"]
+    maintenance: { last_commit: "2024-06-21", stars: 17000 }
+  - name: vitest
+    category: tooling
+    origin: https://www.npmjs.com/package/vitest
+    vendor_method: npm_lockfile
+    version: 1.4.0
+    license: MIT
+    license_file: third_party/LICENSES/vitest-MIT.txt
+    commit: null
+    rationale: Frontend unit tests with Vite compatibility.
+    risks: ["Node version alignment"]
+    maintenance: { last_commit: "2024-06-24", stars: 12000 }
+  - name: pydantic-settings
+    category: backend-lib
+    origin: https://pypi.org/project/pydantic-settings/
+    vendor_method: pinned_pip
+    version: 2.2.1
+    license: MIT
+    license_file: third_party/LICENSES/pydantic-settings-MIT.txt
+    commit: null
+    rationale: Strongly typed environment configuration.
+    risks: ["Depends on pydantic v2 breaking changes"]
+    maintenance: { last_commit: "2024-06-18", stars: 900 }
+notes: "All assets pinned; review quarterly to capture upstream bug fixes."

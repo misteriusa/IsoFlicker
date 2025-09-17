@@ -1,255 +1,1135 @@
 {
-  "version": "2024.04-windows-preview",
-  "categories": {
-    "A": {
-      "label": "Proven (physiology-grade)",
-      "description": "Stimuli with robust entrainment responses in humans or animals. Claims limited to measurable physiology."
+    "version": "2024.07-experimental",
+    "categories": {
+        "A": {
+            "label": "Proven (physiology-grade)",
+            "description": "Stimuli with robust entrainment responses in humans or animals. Claims limited to measurable physiology."
+        },
+        "B": {
+            "label": "High-plausibility, low-evidence",
+            "description": "Research prototypes inspired by known mechanisms but lacking direct outcome trials."
+        },
+        "E": {
+            "label": "Experimental (Research-only)",
+            "description": "Unproven research blocks intended for exploratory labs and internal validation only."
+        }
     },
-    "B": {
-      "label": "High-plausibility, low-evidence",
-      "description": "Research prototypes inspired by known mechanisms but lacking direct outcome trials."
+    "presets": [
+        {
+            "id": "gamma40",
+            "label": "Gamma 40",
+            "category": "A",
+            "mod_rate_hz": 40.0,
+            "duty_cycle": 0.5,
+            "depth": 1.0,
+            "window_ms": 5.0,
+            "carrier": {
+                "type": "pink-noise",
+                "carrier_hz": null
+            },
+            "duration_minutes": 20,
+            "visual": {
+                "enabled": true,
+                "rate_hz": 40.0,
+                "phase_relation_deg": 0,
+                "precision_note": "Exact at 120 Hz refresh; approx at 60 Hz",
+                "contrast": "moderate"
+            },
+            "rationale": "40 Hz ASSR is among the largest sensory-evoked oscillations in humans.",
+            "mechanism": "Auditory steady-state responses and multi-sensory 40 Hz entrainment modulate cortical networks and microglia activity in preclinical work.",
+            "expected_effects": "Strong 40 Hz steady-state sensation; often reported as alerting rather than calming.",
+            "audio": {
+                "carrier": "pink-noise",
+                "mod_rate_hz": 40.0,
+                "depth": 1.0,
+                "duty": 0.5,
+                "window_ms": 5.0
+            },
+            "visual_detail": {
+                "rate_hz": 40.0,
+                "phase_deg": 0,
+                "contrast": "moderate"
+            },
+            "safety_label": "Moderate volume, caution for 3\u201360 Hz visuals",
+            "safety": {
+                "max_volume_pct": 70,
+                "photosensitivity_flag": true,
+                "notes": "Keep comfortable volume; caution for 3-60 Hz visual flicker."
+            },
+            "citations": [
+                1,
+                23
+            ]
+        },
+        {
+            "id": "assr90",
+            "label": "ASSR 90",
+            "category": "A",
+            "mod_rate_hz": 90.0,
+            "duty_cycle": 0.5,
+            "depth": 0.8,
+            "window_ms": 4.0,
+            "carrier": {
+                "type": "sine",
+                "carrier_hz": 1000.0
+            },
+            "duration_minutes": 5,
+            "visual": {
+                "enabled": false,
+                "rate_hz": null,
+                "phase_relation_deg": null,
+                "precision_note": "Audio-only diagnostic block"
+            },
+            "rationale": "High-rate ASSR reflects brainstem generators with sharp tuning curves.",
+            "mechanism": "Brainstem and primary auditory cortex produce large responses near 80\u201395 Hz modulation rates.",
+            "expected_effects": "Crisp, granular buzz suited for verifying the audio chain.",
+            "audio": {
+                "carrier": "sine",
+                "mod_rate_hz": 90.0,
+                "depth": 0.8,
+                "duty": 0.5,
+                "window_ms": 4.0
+            },
+            "visual_detail": {
+                "rate_hz": null,
+                "phase_deg": null,
+                "contrast": null
+            },
+            "safety_label": "Keep short, moderate SPL",
+            "safety": {
+                "max_volume_pct": 60,
+                "photosensitivity_flag": false,
+                "notes": "Short diagnostic bursts recommended."
+            },
+            "citations": [
+                1
+            ]
+        },
+        {
+            "id": "alpha10v",
+            "label": "Alpha 10 Visual",
+            "category": "A",
+            "mod_rate_hz": 10.0,
+            "duty_cycle": 0.5,
+            "depth": 0.7,
+            "window_ms": 6.0,
+            "carrier": {
+                "type": "none",
+                "carrier_hz": null
+            },
+            "duration_minutes": 10,
+            "visual": {
+                "enabled": true,
+                "rate_hz": 10.0,
+                "phase_relation_deg": 0,
+                "precision_note": "Soft contrast to reduce photosensitivity risk",
+                "contrast": "low"
+            },
+            "rationale": "Visual alpha entrainment modulates periodic sampling and attention.",
+            "mechanism": "Flicker at 10 Hz locally entrains occipital alpha power and shifts perception thresholds.",
+            "expected_effects": "Restful soft flicker with potential quieting effect.",
+            "audio": {
+                "carrier": "none",
+                "mod_rate_hz": null,
+                "depth": null,
+                "duty": null,
+                "window_ms": null
+            },
+            "visual_detail": {
+                "rate_hz": 10.0,
+                "phase_deg": 0,
+                "contrast": "low"
+            },
+            "safety_label": "Warn photosensitive users",
+            "safety": {
+                "max_volume_pct": 0,
+                "photosensitivity_flag": true,
+                "notes": "Use soft contrast presets and warn photosensitive users."
+            },
+            "citations": [
+                6
+            ]
+        },
+        {
+            "id": "tg_nest",
+            "label": "Theta-Gamma Nest",
+            "category": "B",
+            "mod_rate_hz": 40.0,
+            "duty_cycle": 0.5,
+            "depth": 1.0,
+            "window_ms": 5.0,
+            "carrier": {
+                "type": "pink-noise",
+                "carrier_hz": null
+            },
+            "outer_envelope": {
+                "mod_rate_hz": 6.0,
+                "depth": 0.6
+            },
+            "duration_minutes": 12,
+            "visual": {
+                "enabled": true,
+                "rate_hz": 40.0,
+                "phase_relation_deg": 0,
+                "precision_note": "Requires 120 Hz display for exact phase alignment",
+                "contrast": "moderate"
+            },
+            "rationale": "External theta\u2192gamma nesting attempts to bias cross-frequency coupling.",
+            "mechanism": "Theta phase modulates gamma amplitude in memory networks; external nesting might influence this coupling.",
+            "expected_effects": "Strong 40 Hz ASSR with a slower 6 Hz envelope; subjective focus reports unverified.",
+            "audio": {
+                "carrier": "pink-noise",
+                "mod_rate_hz": 40.0,
+                "depth": 1.0,
+                "duty": 0.5,
+                "window_ms": 5.0
+            },
+            "visual_detail": {
+                "rate_hz": 40.0,
+                "phase_deg": 0,
+                "contrast": "moderate"
+            },
+            "safety_label": "Research-only, ramp slowly",
+            "safety": {
+                "max_volume_pct": 65,
+                "photosensitivity_flag": true,
+                "notes": "Ramp in/out for comfort; research mode only."
+            },
+            "citations": [
+                3
+            ]
+        },
+        {
+            "id": "av40_phase",
+            "label": "A/V 40 Phase Study",
+            "category": "B",
+            "mod_rate_hz": 40.0,
+            "duty_cycle": 0.5,
+            "depth": 1.0,
+            "window_ms": 5.0,
+            "carrier": {
+                "type": "pink-noise",
+                "carrier_hz": null
+            },
+            "phase_options_deg": [
+                0,
+                90,
+                180
+            ],
+            "duration_minutes": 8,
+            "visual": {
+                "enabled": true,
+                "rate_hz": 40.0,
+                "phase_relation_deg": 0,
+                "precision_note": "Phase offsets selectable per block",
+                "contrast": "moderate"
+            },
+            "rationale": "Explores phase-steered multi-sensory gamma inspired by GENUS animal work.",
+            "mechanism": "Phase differences between senses can modulate multi-sensory integration and entrainment strength.",
+            "expected_effects": "Phase-dependent comfort differences; use for counter-balanced research blocks.",
+            "audio": {
+                "carrier": "pink-noise",
+                "mod_rate_hz": 40.0,
+                "depth": 1.0,
+                "duty": 0.5,
+                "window_ms": 5.0
+            },
+            "visual_detail": {
+                "rate_hz": 40.0,
+                "phase_deg": 0,
+                "contrast": "moderate"
+            },
+            "safety_label": "Encourage breaks",
+            "safety": {
+                "max_volume_pct": 60,
+                "photosensitivity_flag": true,
+                "notes": "Encourage breaks between blocks; research-only."
+            },
+            "citations": [
+                3,
+                9
+            ]
+        },
+        {
+            "id": "alpha10_pre",
+            "label": "Alpha 10 Pre-task",
+            "category": "B",
+            "mod_rate_hz": 10.0,
+            "duty_cycle": 0.5,
+            "depth": 0.6,
+            "window_ms": 6.0,
+            "carrier": {
+                "type": "pink-noise",
+                "carrier_hz": null
+            },
+            "duration_minutes": 12,
+            "visual": {
+                "enabled": false,
+                "rate_hz": null,
+                "phase_relation_deg": null,
+                "precision_note": "Audio pre-task block"
+            },
+            "rationale": "Audio alpha rhythms are explored for relaxation and pain relief but evidence is mixed.",
+            "mechanism": "Auditory alpha stimulation may bias thalamocortical rhythms though outcomes are inconsistent.",
+            "expected_effects": "Mildly soothing AM audio; exploratory only.",
+            "audio": {
+                "carrier": "pink-noise",
+                "mod_rate_hz": 10.0,
+                "depth": 0.6,
+                "duty": 0.5,
+                "window_ms": 6.0
+            },
+            "visual_detail": {
+                "rate_hz": null,
+                "phase_deg": null,
+                "contrast": null
+            },
+            "safety_label": "Keep SPL low",
+            "safety": {
+                "max_volume_pct": 55,
+                "photosensitivity_flag": false,
+                "notes": "Keep volume low; set expectation that outcomes are uncertain."
+            },
+            "citations": [
+                24
+            ]
+        },
+        {
+            "id": "slow08_open",
+            "label": "Slow 0.8 Open-loop",
+            "category": "B",
+            "mod_rate_hz": 0.8,
+            "duty_cycle": 0.04,
+            "depth": 1.0,
+            "window_ms": 20.0,
+            "carrier": {
+                "type": "pink-noise",
+                "carrier_hz": null
+            },
+            "duration_minutes": 10,
+            "visual": {
+                "enabled": false,
+                "rate_hz": null,
+                "phase_relation_deg": null,
+                "precision_note": "Audio bursts every 1.25 s"
+            },
+            "rationale": "Mimics slow oscillation stimulation without closed-loop locking.",
+            "mechanism": "Slow bursts can bias cortical slow oscillations but lack the phase precision of lab systems.",
+            "expected_effects": "Gentle noise bursts; not equivalent to closed-loop protocols.",
+            "audio": {
+                "carrier": "pink-noise",
+                "mod_rate_hz": 0.8,
+                "depth": 1.0,
+                "duty": 0.04,
+                "window_ms": 20.0
+            },
+            "visual_detail": {
+                "rate_hz": null,
+                "phase_deg": null,
+                "contrast": null
+            },
+            "safety_label": "Quiet context only",
+            "safety": {
+                "max_volume_pct": 50,
+                "photosensitivity_flag": false,
+                "notes": "Promote low SPL and restful context."
+            },
+            "citations": [
+                25
+            ]
+        },
+        {
+            "id": "sr_assist",
+            "label": "Stochastic Resonance Assist",
+            "category": "B",
+            "mod_rate_hz": null,
+            "duty_cycle": null,
+            "depth": null,
+            "window_ms": null,
+            "carrier": {
+                "type": "add-on",
+                "carrier_hz": null
+            },
+            "duration_minutes": null,
+            "visual": {
+                "enabled": false,
+                "rate_hz": null,
+                "phase_relation_deg": null,
+                "precision_note": "Noise overlay toggle"
+            },
+            "rationale": "Adds controlled noise to explore stochastic resonance supporting weak-signal perception.",
+            "mechanism": "Noise can improve detectability of weak signals in non-linear systems when tuned to the right amplitude.",
+            "expected_effects": "Some listeners report clearer modulation at lower SPL; others may perceive no change.",
+            "audio": {
+                "carrier": "pink-noise",
+                "mod_rate_hz": null,
+                "depth": null,
+                "duty": null,
+                "window_ms": null,
+                "noise_floor_db": [
+                    -30,
+                    -25,
+                    -20,
+                    -15
+                ]
+            },
+            "visual_detail": {
+                "rate_hz": null,
+                "phase_deg": null,
+                "contrast": null
+            },
+            "safety_label": "Optional noise overlay",
+            "safety": {
+                "max_volume_pct": 45,
+                "photosensitivity_flag": false,
+                "notes": "Keep noise floor low; optional feature disabled by default."
+            },
+            "citations": [
+                7
+            ]
+        },
+        {
+            "id": "E-01",
+            "label": "Gamma \u201cTuning Fork\u201d",
+            "category": "E",
+            "mod_rate_hz": 40.0,
+            "duty_cycle": 0.5,
+            "depth": 1.0,
+            "window_ms": 3.0,
+            "carrier": {
+                "type": "pink-noise",
+                "carrier_hz": null
+            },
+            "duration_minutes": 10,
+            "visual": {
+                "enabled": true,
+                "rate_hz": 40.0,
+                "phase_relation_deg": 0,
+                "precision_note": "Exact 40 Hz requires 120 Hz monitor",
+                "contrast": "moderate"
+            },
+            "rationale": "Find a listener\u2019s personal gamma sweet spot before longer blocks.",
+            "mechanism": "ASSR magnitude varies with modulation rate; per-subject tuning can maximize later entrainment blocks.",
+            "expected_effects": "Notable clarity shifts between 32\u201348 Hz segments; enables subjective rate selection.",
+            "audio": {
+                "carrier": "pink-noise",
+                "mod_rates_hz": [
+                    32.0,
+                    36.0,
+                    40.0,
+                    44.0,
+                    48.0
+                ],
+                "depth": 1.0,
+                "duty": 0.5,
+                "window_ms": 3.0,
+                "block_minutes": 2
+            },
+            "visual_detail": {
+                "rate_hz": 40.0,
+                "phase_deg": 0,
+                "contrast": "moderate"
+            },
+            "safety_label": "Moderate SPL only",
+            "safety": {
+                "max_volume_pct": 65,
+                "photosensitivity_flag": true,
+                "notes": "Provide breaks between 2 min blocks; monitor photosensitivity."
+            },
+            "citations": [
+                1
+            ]
+        },
+        {
+            "id": "E-02",
+            "label": "Dual-Harmonic Gamma",
+            "category": "E",
+            "mod_rate_hz": 40.0,
+            "duty_cycle": 0.5,
+            "depth": 1.2,
+            "window_ms": 5.0,
+            "carrier": {
+                "type": "sine",
+                "carrier_hz": 1000.0
+            },
+            "duration_minutes": 12,
+            "visual": {
+                "enabled": true,
+                "rate_hz": 40.0,
+                "phase_relation_deg": 0,
+                "precision_note": "Visual optional",
+                "contrast": "moderate"
+            },
+            "rationale": "Stack fundamental 20 Hz and harmonic 40 Hz envelopes for stronger coupling.",
+            "mechanism": "Cortex produces harmonics in ASSR; summing 20 + 40 Hz envelopes may recruit broader networks.",
+            "expected_effects": "Strong 40 Hz sensation with an audible 20 Hz beating layer.",
+            "audio": {
+                "carrier": "sine",
+                "mod_rates_hz": [
+                    20.0,
+                    40.0
+                ],
+                "depth_each": 0.6,
+                "duty": 0.5,
+                "window_ms": 5.0
+            },
+            "visual_detail": {
+                "rate_hz": 40.0,
+                "phase_deg": 0,
+                "contrast": "moderate"
+            },
+            "safety_label": "Research blend",
+            "safety": {
+                "max_volume_pct": 65,
+                "photosensitivity_flag": true,
+                "notes": "Use comfortable SPL; harmonics may feel intense."
+            },
+            "citations": [
+                2
+            ]
+        },
+        {
+            "id": "E-03",
+            "label": "Theta\u2192Gamma Nesting v2",
+            "category": "E",
+            "mod_rate_hz": 40.0,
+            "duty_cycle": 0.5,
+            "depth": 1.0,
+            "window_ms": 5.0,
+            "carrier": {
+                "type": "pink-noise",
+                "carrier_hz": null
+            },
+            "duration_minutes": 12,
+            "visual": {
+                "enabled": true,
+                "rate_hz": 40.0,
+                "phase_relation_deg": 0,
+                "precision_note": "Cycle through 0/90/180\u00b0 A/V phase",
+                "contrast": "moderate"
+            },
+            "rationale": "Phase-locked theta-to-gamma coupling variant with multisensory alignment sweeps.",
+            "mechanism": "Theta phase modulating gamma amplitude underpins episodic memory coding; audio-visual phase shifts may alter integration.",
+            "expected_effects": "Phase-dependent comfort or alertness differences useful for screening before long protocols.",
+            "audio": {
+                "carrier": "pink-noise",
+                "mod_rate_hz": 40.0,
+                "depth": 1.0,
+                "outer_rate_hz": 6.0,
+                "outer_depth": 1.0,
+                "duty": 0.5,
+                "window_ms": 5.0,
+                "phase_sequence_deg": [
+                    0,
+                    90,
+                    180
+                ]
+            },
+            "visual_detail": {
+                "rate_hz": 40.0,
+                "phase_deg": 0,
+                "contrast": "moderate"
+            },
+            "safety_label": "Phase sweep research",
+            "safety": {
+                "max_volume_pct": 60,
+                "photosensitivity_flag": true,
+                "notes": "Log comfort per phase; stop on adverse reactions."
+            },
+            "citations": [
+                3
+            ]
+        },
+        {
+            "id": "E-04",
+            "label": "Rapid Gamma Chirp",
+            "category": "E",
+            "mod_rate_hz": 36.0,
+            "duty_cycle": 0.5,
+            "depth": 1.0,
+            "window_ms": 5.0,
+            "carrier": {
+                "type": "pink-noise",
+                "carrier_hz": null
+            },
+            "duration_minutes": 10,
+            "visual": {
+                "enabled": false,
+                "rate_hz": null,
+                "phase_relation_deg": null,
+                "precision_note": "Audio sweep only"
+            },
+            "rationale": "Continuous sweep to highlight sweet-spot ranges without discrete steps.",
+            "mechanism": "ASSR amplitude is modulation-rate dependent; chirp reveals the rate window with highest response.",
+            "expected_effects": "Participants note the minute with strongest sensation for later personalization.",
+            "audio": {
+                "carrier": "pink-noise",
+                "chirp_start_hz": 36.0,
+                "chirp_end_hz": 44.0,
+                "depth": 1.0,
+                "duty": 0.5,
+                "window_ms": 5.0
+            },
+            "visual_detail": {
+                "rate_hz": null,
+                "phase_deg": null,
+                "contrast": null
+            },
+            "safety_label": "Continuous sweep",
+            "safety": {
+                "max_volume_pct": 60,
+                "photosensitivity_flag": false,
+                "notes": "Recommend journal logging of perceived sweet spot."
+            },
+            "citations": [
+                1
+            ]
+        },
+        {
+            "id": "E-05",
+            "label": "Oddball-MMN Training",
+            "category": "E",
+            "mod_rate_hz": 40.0,
+            "duty_cycle": 0.5,
+            "depth": 1.0,
+            "window_ms": 5.0,
+            "carrier": {
+                "type": "pink-noise",
+                "carrier_hz": null
+            },
+            "duration_minutes": 15,
+            "visual": {
+                "enabled": false,
+                "rate_hz": null,
+                "phase_relation_deg": null,
+                "precision_note": "Audio oddball task"
+            },
+            "rationale": "Pair 40 Hz entrainment with mismatch-negativity deviant detection.",
+            "mechanism": "MMN reflects automatic deviance detection; entrained timing may sharpen detection per dynamic attending theory.",
+            "expected_effects": "Improved response times across blocks; captures objective attention metrics.",
+            "audio": {
+                "carrier": "pink-noise",
+                "mod_rate_hz": 40.0,
+                "depth": 1.0,
+                "duty": 0.5,
+                "window_ms": 5.0,
+                "deviant_depth": 1.1,
+                "deviant_probability": 0.08,
+                "deviant_duration_ms": 300
+            },
+            "visual_detail": {
+                "rate_hz": null,
+                "phase_deg": null,
+                "contrast": null
+            },
+            "safety_label": "Includes attention task",
+            "safety": {
+                "max_volume_pct": 60,
+                "photosensitivity_flag": false,
+                "notes": "Inform users there are button presses; pause if fatigued."
+            },
+            "citations": [
+                4
+            ]
+        },
+        {
+            "id": "E-06",
+            "label": "Hazard-Jitter Entrainment",
+            "category": "E",
+            "mod_rate_hz": 10.0,
+            "duty_cycle": 0.5,
+            "depth": 1.0,
+            "window_ms": 5.0,
+            "carrier": {
+                "type": "pink-noise",
+                "carrier_hz": null
+            },
+            "duration_minutes": 12,
+            "visual": {
+                "enabled": false,
+                "rate_hz": null,
+                "phase_relation_deg": null,
+                "precision_note": "Audio reaction-time task"
+            },
+            "rationale": "Compare isochronous vs jittered AM for temporal expectation effects.",
+            "mechanism": "Hazard models predict faster detection when events align with predictable timing cues.",
+            "expected_effects": "Lower reaction time variance in isochronous blocks compared to jittered blocks.",
+            "audio": {
+                "carrier": "pink-noise",
+                "mod_rate_hz": 10.0,
+                "depth": 1.0,
+                "duty": 0.5,
+                "window_ms": 5.0,
+                "jitter_pct": 10.0
+            },
+            "visual_detail": {
+                "rate_hz": null,
+                "phase_deg": null,
+                "contrast": null
+            },
+            "safety_label": "Active RT task",
+            "safety": {
+                "max_volume_pct": 55,
+                "photosensitivity_flag": false,
+                "notes": "Encourage posture changes between blocks to avoid fatigue."
+            },
+            "citations": [
+                5
+            ]
+        },
+        {
+            "id": "E-07",
+            "label": "Alpha-Gate Visual Ring",
+            "category": "E",
+            "mod_rate_hz": 10.0,
+            "duty_cycle": 0.5,
+            "depth": 0.7,
+            "window_ms": 6.0,
+            "carrier": {
+                "type": "pink-noise",
+                "carrier_hz": null
+            },
+            "duration_minutes": 8,
+            "visual": {
+                "enabled": true,
+                "rate_hz": 10.0,
+                "phase_relation_deg": 0,
+                "precision_note": "Low-contrast ring mask",
+                "contrast": "low"
+            },
+            "rationale": "Pair 10 Hz audio with a masked visual ring for gentle alpha entrainment.",
+            "mechanism": "Local alpha entrainment affects perception; ring masking reduces fatigue while sustaining localized flicker.",
+            "expected_effects": "Subjective quieting and visual softening reports; research-only.",
+            "audio": {
+                "carrier": "pink-noise",
+                "mod_rate_hz": 10.0,
+                "depth": 0.6,
+                "duty": 0.5,
+                "window_ms": 6.0
+            },
+            "visual_detail": {
+                "rate_hz": 10.0,
+                "phase_deg": 0,
+                "contrast": "low",
+                "mask_radius_deg": [
+                    5,
+                    10
+                ]
+            },
+            "safety_label": "Low-contrast visual",
+            "safety": {
+                "max_volume_pct": 50,
+                "photosensitivity_flag": true,
+                "notes": "Keep display brightness comfortable; stop on eye strain."
+            },
+            "citations": [
+                6
+            ]
+        },
+        {
+            "id": "E-08",
+            "label": "Stochastic-Resonance Assist",
+            "category": "E",
+            "mod_rate_hz": 40.0,
+            "duty_cycle": 0.5,
+            "depth": 0.6,
+            "window_ms": 5.0,
+            "carrier": {
+                "type": "pink-noise",
+                "carrier_hz": null
+            },
+            "duration_minutes": 8,
+            "visual": {
+                "enabled": false,
+                "rate_hz": null,
+                "phase_relation_deg": null,
+                "precision_note": "Noise sweep"
+            },
+            "rationale": "Explicit stochastic-resonance sweep controlling added broadband noise levels.",
+            "mechanism": "Noise at tuned amplitudes can enhance perception in non-linear sensory systems.",
+            "expected_effects": "Some users report clearer rhythm at moderate noise floors; others show no change.",
+            "audio": {
+                "carrier": "pink-noise",
+                "mod_rate_hz": 40.0,
+                "depth": 0.6,
+                "duty": 0.5,
+                "window_ms": 5.0,
+                "noise_floor_db": [
+                    -30,
+                    -25,
+                    -20,
+                    -15
+                ]
+            },
+            "visual_detail": {
+                "rate_hz": null,
+                "phase_deg": null,
+                "contrast": null
+            },
+            "safety_label": "Exploratory noise levels",
+            "safety": {
+                "max_volume_pct": 55,
+                "photosensitivity_flag": false,
+                "notes": "Clearly label as exploratory; stop if noise feels intrusive."
+            },
+            "citations": [
+                7
+            ]
+        },
+        {
+            "id": "E-09",
+            "label": "High-Rate ASSR Alert",
+            "category": "E",
+            "mod_rate_hz": 90.0,
+            "duty_cycle": 0.5,
+            "depth": 1.0,
+            "window_ms": 4.0,
+            "carrier": {
+                "type": "sine",
+                "carrier_hz": 1000.0
+            },
+            "duration_minutes": 6,
+            "visual": {
+                "enabled": false,
+                "rate_hz": null,
+                "phase_relation_deg": null,
+                "precision_note": "Short alerting blocks"
+            },
+            "rationale": "Short 90 Hz bursts to validate engine behavior and alertness.",
+            "mechanism": "Brainstem generators peak near 90 Hz modulation producing reliable ASSR benchmarks.",
+            "expected_effects": "Crisp buzzing sensation suitable for hardware validation.",
+            "audio": {
+                "carrier": "sine",
+                "mod_rate_hz": 90.0,
+                "depth": 1.0,
+                "duty": 0.5,
+                "window_ms": 4.0
+            },
+            "visual_detail": {
+                "rate_hz": null,
+                "phase_deg": null,
+                "contrast": null
+            },
+            "safety_label": "Short alerting burst",
+            "safety": {
+                "max_volume_pct": 60,
+                "photosensitivity_flag": false,
+                "notes": "Limit to 2 min blocks with breaks."
+            },
+            "citations": [
+                1
+            ]
+        },
+        {
+            "id": "E-10",
+            "label": "Binaural vs Monaural AM",
+            "category": "E",
+            "mod_rate_hz": 40.0,
+            "duty_cycle": 0.5,
+            "depth": 1.0,
+            "window_ms": 5.0,
+            "carrier": {
+                "type": "sine",
+                "carrier_hz": 1000.0
+            },
+            "duration_minutes": 8,
+            "visual": {
+                "enabled": false,
+                "rate_hz": null,
+                "phase_relation_deg": null,
+                "precision_note": "Audio A/B test"
+            },
+            "rationale": "Compare interaural envelope phase for comfort and spatial perception.",
+            "mechanism": "Envelope-following responses track AM even with identical carriers; phase inversion alters lateralization.",
+            "expected_effects": "Subtle spatial differences between in-phase and 180\u00b0 inverted envelopes.",
+            "audio": {
+                "carrier": "sine",
+                "mod_rate_hz": 40.0,
+                "depth": 1.0,
+                "duty": 0.5,
+                "window_ms": 5.0,
+                "interaural_phase_deg": [
+                    0,
+                    180
+                ]
+            },
+            "visual_detail": {
+                "rate_hz": null,
+                "phase_deg": null,
+                "contrast": null
+            },
+            "safety_label": "Comfort comparison",
+            "safety": {
+                "max_volume_pct": 60,
+                "photosensitivity_flag": false,
+                "notes": "Log preferred mode for longer sessions."
+            },
+            "citations": [
+                8
+            ]
+        },
+        {
+            "id": "E-11",
+            "label": "Envelope-of-Envelope",
+            "category": "E",
+            "mod_rate_hz": 40.0,
+            "duty_cycle": 0.5,
+            "depth": 1.2,
+            "window_ms": 5.0,
+            "carrier": {
+                "type": "pink-noise",
+                "carrier_hz": null
+            },
+            "duration_minutes": 10,
+            "visual": {
+                "enabled": false,
+                "rate_hz": null,
+                "phase_relation_deg": null,
+                "precision_note": "Audio envelope beating"
+            },
+            "rationale": "Layer 40 and 43 Hz envelopes to create a 3 Hz beat in the envelope-of-envelope.",
+            "mechanism": "Fast envelope tracking interacts with slower attention rhythms per envelope-following response literature.",
+            "expected_effects": "Perceived beating riding on gamma buzz; experimental only.",
+            "audio": {
+                "carrier": "pink-noise",
+                "mod_rates_hz": [
+                    40.0,
+                    43.0
+                ],
+                "depth_each": 0.6,
+                "duty": 0.5,
+                "window_ms": 5.0
+            },
+            "visual_detail": {
+                "rate_hz": null,
+                "phase_deg": null,
+                "contrast": null
+            },
+            "safety_label": "Experimental envelope",
+            "safety": {
+                "max_volume_pct": 60,
+                "photosensitivity_flag": false,
+                "notes": "Document subjective clarity of the slow beat."
+            },
+            "citations": [
+                9
+            ]
+        },
+        {
+            "id": "E-12",
+            "label": "Breath-Sync Pacer",
+            "category": "E",
+            "mod_rate_hz": 10.0,
+            "duty_cycle": 0.5,
+            "depth": 0.4,
+            "window_ms": 6.0,
+            "carrier": {
+                "type": "pink-noise",
+                "carrier_hz": null
+            },
+            "duration_minutes": 10,
+            "visual": {
+                "enabled": true,
+                "rate_hz": 0.1,
+                "phase_relation_deg": 0,
+                "precision_note": "0.1 Hz breath bar",
+                "contrast": "low"
+            },
+            "rationale": "Pair resonance-frequency breathing pacing with gentle alpha audio cue.",
+            "mechanism": "0.1 Hz breathing increases HRV; audio alpha tone serves as metronome without claiming HRV causation.",
+            "expected_effects": "Easier breath pacing; HRV benefits arise from breathing cadence.",
+            "audio": {
+                "carrier": "pink-noise",
+                "mod_rate_hz": 10.0,
+                "depth": 0.4,
+                "duty": 0.5,
+                "window_ms": 6.0,
+                "level_db": -20
+            },
+            "visual_detail": {
+                "rate_hz": 0.1,
+                "phase_deg": 0,
+                "contrast": "low"
+            },
+            "safety_label": "Breathing paced",
+            "safety": {
+                "max_volume_pct": 40,
+                "photosensitivity_flag": false,
+                "notes": "Remind users HRV effects stem from breathing, not audio."
+            },
+            "citations": [
+                10
+            ]
+        },
+        {
+            "id": "E-13",
+            "label": "Peri-Threshold Depth Mapping",
+            "category": "E",
+            "mod_rate_hz": 40.0,
+            "duty_cycle": 0.5,
+            "depth": 0.2,
+            "window_ms": 5.0,
+            "carrier": {
+                "type": "sine",
+                "carrier_hz": 1000.0
+            },
+            "duration_minutes": 12,
+            "visual": {
+                "enabled": false,
+                "rate_hz": null,
+                "phase_relation_deg": null,
+                "precision_note": "2-AFC depth ladder"
+            },
+            "rationale": "Maps minimum detectable modulation depth using adaptive staircase.",
+            "mechanism": "Envelope modulation transfer function reveals whether hardware preserves commanded depth.",
+            "expected_effects": "Generates personalized threshold curve for modulation depth perception.",
+            "audio": {
+                "carrier": "sine",
+                "mod_rate_hz": 40.0,
+                "depth_start": 0.6,
+                "depth_min": 0.05,
+                "step_db": 1.5,
+                "duty": 0.5,
+                "window_ms": 5.0
+            },
+            "visual_detail": {
+                "rate_hz": null,
+                "phase_deg": null,
+                "contrast": null
+            },
+            "safety_label": "Adaptive test",
+            "safety": {
+                "max_volume_pct": 55,
+                "photosensitivity_flag": false,
+                "notes": "Use moderate SPL; stop if fatigue occurs."
+            },
+            "citations": [
+                11
+            ]
+        },
+        {
+            "id": "E-14",
+            "label": "SSVEP Tagging (Comfort)",
+            "category": "E",
+            "mod_rate_hz": null,
+            "duty_cycle": null,
+            "depth": null,
+            "window_ms": null,
+            "carrier": {
+                "type": "none",
+                "carrier_hz": null
+            },
+            "duration_minutes": 9,
+            "visual": {
+                "enabled": true,
+                "rate_hz": 12.0,
+                "phase_relation_deg": 0,
+                "precision_note": "12 vs 15 Hz dual patches",
+                "contrast": "very-low"
+            },
+            "rationale": "Gentle SSVEP tagging to gather comfort ratings without EEG decoding.",
+            "mechanism": "Low-contrast steady-state flicker can evoke measurable SSVEP with reduced fatigue.",
+            "expected_effects": "Collect comfort surveys while keeping flicker tolerable.",
+            "audio": {
+                "carrier": "none",
+                "mod_rate_hz": null,
+                "depth": null,
+                "duty": null,
+                "window_ms": null
+            },
+            "visual_detail": {
+                "rate_hz": [
+                    12.0,
+                    15.0
+                ],
+                "phase_deg": 0,
+                "contrast": "very-low"
+            },
+            "safety_label": "Low-contrast visual",
+            "safety": {
+                "max_volume_pct": 0,
+                "photosensitivity_flag": true,
+                "notes": "Keep contrasts soft and sessions short."
+            },
+            "citations": [
+                12
+            ]
+        },
+        {
+            "id": "E-15",
+            "label": "Jitter-Tolerant Gamma",
+            "category": "E",
+            "mod_rate_hz": 40.0,
+            "duty_cycle": 0.5,
+            "depth": 1.0,
+            "window_ms": 5.0,
+            "carrier": {
+                "type": "pink-noise",
+                "carrier_hz": null
+            },
+            "duration_minutes": 8,
+            "visual": {
+                "enabled": true,
+                "rate_hz": 40.0,
+                "phase_relation_deg": 0,
+                "precision_note": "Compares 60 vs 120 Hz strategies",
+                "contrast": "moderate"
+            },
+            "rationale": "Demonstrate rational patterning on 60 Hz displays versus exact 3-frame pacing on 120 Hz.",
+            "mechanism": "Quantized frame sequencing at 60 Hz creates jitter; rational alternation reduces perceptual roughness.",
+            "expected_effects": "Users feel difference between quantized and exact gamma flicker; highlights need for 120 Hz.",
+            "audio": {
+                "carrier": "pink-noise",
+                "mod_rate_hz": 40.0,
+                "depth": 1.0,
+                "duty": 0.5,
+                "window_ms": 5.0
+            },
+            "visual_detail": {
+                "rate_hz": 40.0,
+                "phase_deg": 0,
+                "contrast": "moderate",
+                "display_modes": [
+                    "60Hz rational",
+                    "120Hz exact"
+                ]
+            },
+            "safety_label": "Visual comparison",
+            "safety": {
+                "max_volume_pct": 55,
+                "photosensitivity_flag": true,
+                "notes": "Explain why 120 Hz displays give cleaner gamma."
+            },
+            "citations": [
+                13
+            ]
+        }
+    ],
+    "citations": {
+        "1": "https://pubmed.ncbi.nlm.nih.gov/12790346/",
+        "2": "https://www.sciencedirect.com/science/article/abs/pii/S0378595503002995",
+        "3": "https://pmc.ncbi.nlm.nih.gov/articles/PMC10229831/",
+        "4": "https://pubmed.ncbi.nlm.nih.gov/17931964/",
+        "5": "https://pmc.ncbi.nlm.nih.gov/articles/PMC7548698/",
+        "6": "https://pmc.ncbi.nlm.nih.gov/articles/PMC6608988/",
+        "7": "https://pmc.ncbi.nlm.nih.gov/articles/PMC2660436/",
+        "8": "https://pmc.ncbi.nlm.nih.gov/articles/PMC5031488/",
+        "9": "https://pmc.ncbi.nlm.nih.gov/articles/PMC5783923/",
+        "10": "https://www.sciencedirect.com/science/article/abs/pii/S0149763422000653",
+        "11": "https://pubs.aip.org/asa/jasa/article/77/3/1069/802013/",
+        "12": "https://pmc.ncbi.nlm.nih.gov/articles/PMC4581566/",
+        "13": "https://learn.microsoft.com/en-us/windows/uwp/gaming/reduce-latency-with-dxgi-1-3-swap-chains",
+        "14": "https://learn.microsoft.com/en-us/windows/win32/coreaudio/pkey-audioendpoint-formfactor",
+        "15": "https://learn.microsoft.com/en-us/windows/win32/coreaudio/loopback-recording",
+        "16": "https://cdn.standards.iteh.ai/samples/21925/7a5eb0d5e54e49e685b89ede43782760/IEC-60268-16-2020.pdf",
+        "17": "https://support.microsoft.com/en-us/windows/check-if-a-windows-11-device-supports-bluetooth-low-energy-audio-2b79c085-0353-4467-8306-ebb2657a91de",
+        "18": "https://learn.microsoft.com/en-us/windows-hardware/design/accessory-guidelines/bluetooth-accessory-guidelines-classic-audio",
+        "19": "https://learn.microsoft.com/en-us/windows/win32/api/audioclient/nn-audioclient-iaudioclient",
+        "20": "https://learn.microsoft.com/en-us/windows/win32/sysinfo/acquiring-high-resolution-time-stamps",
+        "21": "https://learn.microsoft.com/en-us/windows/win32/coreaudio/exclusive-mode-streams",
+        "22": "https://www.w3.org/WAI/WCAG21/Understanding/three-flashes-or-below-threshold.html",
+        "23": "https://www.nature.com/articles/nature20587",
+        "24": "https://bmccomplementmedtherapies.biomedcentral.com/articles/10.1186/s12906-024-04339-y",
+        "25": "https://www.sciencedirect.com/science/article/pii/S0896627313002304"
     }
-  },
-  "presets": [
-    {
-      "id": "gamma40",
-      "label": "Gamma 40",
-      "category": "A",
-      "mod_rate_hz": 40.0,
-      "duty_cycle": 0.5,
-      "depth": 1.0,
-      "window_ms": 5.0,
-      "carrier": {
-        "type": "pink-noise",
-        "carrier_hz": null
-      },
-      "duration_minutes": 20,
-      "visual": {
-        "enabled": true,
-        "rate_hz": 40.0,
-        "phase_relation_deg": 0,
-        "precision_note": "Exact at 120 Hz refresh; approx at 60 Hz"
-      },
-      "rationale": "40 Hz auditory steady-state responses are large and reliable biomarkers. Multi-sensory 40 Hz (GENUS) shows microglia/amyloid shifts in AD mouse models; human translation remains early/mixed.",
-      "expected": "Strong 40 Hz ASSR; potential alertness. No clinical claims.",
-      "safety": {
-        "max_volume_pct": 70,
-        "photosensitivity_flag": true,
-        "notes": "Keep comfortable volume; caution for 3-60 Hz visual flicker." 
-      },
-      "citations": [8, 9]
-    },
-    {
-      "id": "assr90",
-      "label": "ASSR 90",
-      "category": "A",
-      "mod_rate_hz": 90.0,
-      "duty_cycle": 0.5,
-      "depth": 0.8,
-      "window_ms": 4.0,
-      "carrier": {
-        "type": "sine",
-        "carrier_hz": 1000.0
-      },
-      "duration_minutes": 5,
-      "visual": {
-        "enabled": false,
-        "rate_hz": null,
-        "phase_relation_deg": null,
-        "precision_note": "Audio-only diagnostic block"
-      },
-      "rationale": "Brainstem-dominant ASSR peaks near 80-95 Hz; excellent for verifying the audio engine and headphone chain.",
-      "expected": "Rough alerting tone for calibration; not relaxing.",
-      "safety": {
-        "max_volume_pct": 60,
-        "photosensitivity_flag": false,
-        "notes": "Short diagnostic bursts recommended." 
-      },
-      "citations": [10]
-    },
-    {
-      "id": "alpha10v",
-      "label": "Alpha 10 Visual",
-      "category": "A",
-      "mod_rate_hz": 10.0,
-      "duty_cycle": 0.5,
-      "depth": 0.7,
-      "window_ms": 6.0,
-      "carrier": {
-        "type": "none",
-        "carrier_hz": null
-      },
-      "duration_minutes": 10,
-      "visual": {
-        "enabled": true,
-        "rate_hz": 10.0,
-        "phase_relation_deg": 0,
-        "precision_note": "Soft contrast to reduce photosensitivity risk"
-      },
-      "rationale": "Visual alpha entrainment modulates periodic sampling and is reliable in EEG/MEG.",
-      "expected": "Visual 10 Hz flicker; restful alpha entrainment.",
-      "safety": {
-        "max_volume_pct": 0,
-        "photosensitivity_flag": true,
-        "notes": "Use soft contrast presets and warn photosensitive users." 
-      },
-      "citations": [11]
-    },
-    {
-      "id": "tg_nest",
-      "label": "Theta-Gamma Nest",
-      "category": "B",
-      "mod_rate_hz": 40.0,
-      "duty_cycle": 0.5,
-      "depth": 1.0,
-      "window_ms": 5.0,
-      "carrier": {
-        "type": "pink-noise",
-        "carrier_hz": null
-      },
-      "outer_envelope": {
-        "mod_rate_hz": 6.0,
-        "depth": 0.6
-      },
-      "duration_minutes": 12,
-      "visual": {
-        "enabled": true,
-        "rate_hz": 40.0,
-        "phase_relation_deg": 0,
-        "precision_note": "Requires 120 Hz display for exact phase alignment"
-      },
-      "rationale": "External theta→gamma nesting attempts to bias cross-frequency coupling seen in memory networks.",
-      "expected": "Strong 40 Hz ASSR plus 6 Hz envelope; subjective focus reports unverified.",
-      "safety": {
-        "max_volume_pct": 65,
-        "photosensitivity_flag": true,
-        "notes": "Ramp in/out for comfort; research mode only." 
-      },
-      "citations": [14]
-    },
-    {
-      "id": "av40_phase",
-      "label": "A/V 40 Phase Study",
-      "category": "B",
-      "mod_rate_hz": 40.0,
-      "duty_cycle": 0.5,
-      "depth": 1.0,
-      "window_ms": 5.0,
-      "carrier": {
-        "type": "pink-noise",
-        "carrier_hz": null
-      },
-      "phase_options_deg": [0, 90, 180],
-      "duration_minutes": 8,
-      "visual": {
-        "enabled": true,
-        "rate_hz": 40.0,
-        "phase_relation_deg": 0,
-        "precision_note": "Phase offsets selectable per block"
-      },
-      "rationale": "Explores phase-steered multi-sensory gamma inspired by mouse GENUS experiments.",
-      "expected": "Phase-dependent coherence/comfort shifts; for counterbalanced research blocks.",
-      "safety": {
-        "max_volume_pct": 60,
-        "photosensitivity_flag": true,
-        "notes": "Encourage breaks between blocks; research-only." 
-      },
-      "citations": [15]
-    },
-    {
-      "id": "alpha10_pre",
-      "label": "Alpha 10 Pre-task",
-      "category": "B",
-      "mod_rate_hz": 10.0,
-      "duty_cycle": 0.5,
-      "depth": 0.6,
-      "window_ms": 6.0,
-      "carrier": {
-        "type": "pink-noise",
-        "carrier_hz": null
-      },
-      "duration_minutes": 12,
-      "visual": {
-        "enabled": false,
-        "rate_hz": null,
-        "phase_relation_deg": null,
-        "precision_note": "Audio pre-task block"
-      },
-      "rationale": "Alpha-range modulation occasionally reduces acute pain/anxiety; evidence mixed and largely from binaural beats.",
-      "expected": "Mildly soothing AM audio; exploratory only.",
-      "safety": {
-        "max_volume_pct": 55,
-        "photosensitivity_flag": false,
-        "notes": "Keep volume low; set expectation that outcomes are uncertain." 
-      },
-      "citations": [16]
-    },
-    {
-      "id": "slow08_open",
-      "label": "Slow 0.8 Open-loop",
-      "category": "B",
-      "mod_rate_hz": 0.8,
-      "duty_cycle": 0.04,
-      "depth": 1.0,
-      "window_ms": 20.0,
-      "carrier": {
-        "type": "pink-noise",
-        "carrier_hz": null
-      },
-      "duration_minutes": 10,
-      "visual": {
-        "enabled": false,
-        "rate_hz": null,
-        "phase_relation_deg": null,
-        "precision_note": "Audio bursts every 1.25 s"
-      },
-      "rationale": "Open-loop slow bursts mimic closed-loop sleep stimulation but lack phase-locking; offered for practice only.",
-      "expected": "Gentle noise bursts; not equivalent to lab closed-loop protocols.",
-      "safety": {
-        "max_volume_pct": 50,
-        "photosensitivity_flag": false,
-        "notes": "Promote low SPL and restful context." 
-      },
-      "citations": [12]
-    },
-    {
-      "id": "sr_assist",
-      "label": "Stochastic Resonance Assist",
-      "category": "B",
-      "mod_rate_hz": null,
-      "duty_cycle": null,
-      "depth": null,
-      "window_ms": null,
-      "carrier": {
-        "type": "add-on",
-        "carrier_hz": null
-      },
-      "duration_minutes": null,
-      "visual": {
-        "enabled": false,
-        "rate_hz": null,
-        "phase_relation_deg": null,
-        "precision_note": "Toggle adds -20 dB band-limited noise"
-      },
-      "rationale": "Adds controlled noise to explore stochastic resonance supporting weak-signal perception.",
-      "expected": "Improved perception of modulation at lower levels for some listeners; evidence limited.",
-      "safety": {
-        "max_volume_pct": 45,
-        "photosensitivity_flag": false,
-        "notes": "Keep noise floor low; optional feature disabled by default." 
-      },
-      "citations": [17]
-    }
-  ],
-  "citations": {
-    "8": "https://pmc.ncbi.nlm.nih.gov/articles/PMC4946051/",
-    "9": "https://pmc.ncbi.nlm.nih.gov/articles/PMC5656389/",
-    "10": "https://pubmed.ncbi.nlm.nih.gov/7759645/",
-    "11": "https://pmc.ncbi.nlm.nih.gov/articles/PMC8483591/",
-    "12": "https://www.sciencedirect.com/science/article/pii/S0896627313002304",
-    "14": "https://onlinelibrary.wiley.com/doi/full/10.1002/hbm.25262",
-    "15": "https://www.cell.com/cell/fulltext/S0092-8674(19)30163-1",
-    "16": "https://bmccomplementmedtherapies.biomedcentral.com/articles/10.1186/s12906-024-04339-y",
-    "17": "https://pubmed.ncbi.nlm.nih.gov/14744566/"
-  }
 }
