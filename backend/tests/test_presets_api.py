@@ -13,7 +13,7 @@ def test_list_presets_returns_catalog(client: TestClient) -> None:
     assert isinstance(payload, list)
     # There should be at least one entry for each category.
     categories = {item["category"] for item in payload}
-    assert {"A", "B"}.issubset(categories)
+    assert {"A", "B", "E"}.issubset(categories)
 
 
 def test_get_preset_returns_detail(client: TestClient) -> None:
@@ -25,6 +25,8 @@ def test_get_preset_returns_detail(client: TestClient) -> None:
     assert data["label"].lower().startswith("gamma")
     assert data["visual_enabled"] is True
     assert data["rationale"]
+    assert data["expected_effects"]
+    assert "mod_rate_hz" in data["audio_config"]
 
 
 def test_list_categories(client: TestClient) -> None:

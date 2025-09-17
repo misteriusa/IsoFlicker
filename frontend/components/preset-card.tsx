@@ -10,6 +10,8 @@ export interface PresetCardProps {
 }
 
 export function PresetCard({ preset, onSelect }: PresetCardProps) {
+  const audio = preset.audio_config as Record<string, unknown>;
+  const visual = preset.visual_config as Record<string, unknown>;
   return (
     <Card className="h-full">
       <CardHeader>
@@ -22,16 +24,29 @@ export function PresetCard({ preset, onSelect }: PresetCardProps) {
         </div>
       </CardHeader>
       <CardContent className="space-y-3 text-slate-200">
-        <p className="text-sm leading-relaxed">{preset.expected}</p>
+        <p className="text-sm leading-relaxed">{preset.expected_effects}</p>
         <div className="rounded-lg border border-slate-800 bg-slate-900/70 p-3 text-xs text-slate-400">
           <p className="font-semibold uppercase tracking-wide text-slate-300">Science</p>
           <p className="mt-1 whitespace-pre-line">{preset.rationale}</p>
+          {preset.mechanism && (
+            <p className="mt-2 whitespace-pre-line text-slate-300">Mechanism: {preset.mechanism}</p>
+          )}
         </div>
-        <p className="text-xs text-amber-200/80">Safety: {preset.safety_notes}</p>
-        <div className="flex items-center justify-between text-xs text-slate-400">
-          <span>Depth: {preset.depth ?? "—"}</span>
+        <p className="text-xs text-amber-200/80">
+          {preset.safety_label ? `${preset.safety_label} · ` : null}
+          Safety: {preset.safety_notes}
+        </p>
+        <div className="grid grid-cols-2 gap-2 text-xs text-slate-400 md:grid-cols-3">
+          <span>
+            Audio rate: {(audio.mod_rate_hz as number | undefined) ?? (audio.chirp_start_hz as number | undefined) ?? preset.mod_rate_hz ?? "—"} Hz
+          </span>
+          <span>Depth: {preset.depth ?? (audio.depth as number | undefined) ?? (audio.depth_each as number | undefined) ?? "—"}</span>
           <span>Duration: {preset.duration_minutes ?? "—"} min</span>
-          <span>Visual: {preset.visual_enabled ? `${preset.visual_rate_hz} Hz` : "none"}</span>
+          <span>
+            Visual: {preset.visual_enabled ? `${preset.visual_rate_hz ?? (visual.rate_hz as number | string | undefined) ?? "?"} Hz` : "none"}
+          </span>
+          <span>Carrier: {(preset.carrier_type ?? (audio.carrier as string | undefined) ?? "—") as string}</span>
+          <span>Photosensitive: {preset.photosensitivity_flag ? "Yes" : "No"}</span>
         </div>
         <Button
           variant="outline"
