@@ -25,7 +25,9 @@ def _normalized_depth(envelope: NDArray[np.float64], sample_rate: int, target_hz
     idx = int(np.argmin(np.abs(freqs - target_hz)))
     mod_amp = float(np.abs(spectrum[idx]))
     dc_amp = float(np.abs(spectrum[0])) or 1e-9
-    return float(np.clip(mod_amp / dc_amp, 0.0, 1.0))
+    # For an envelope of the form A0 + A1*sin(wt), the single-sided FFT fundamental
+    # magnitude is A1/2. Multiply by 2 so the ratio maps back to modulation depth.
+    return float(np.clip((2.0 * mod_amp) / dc_amp, 0.0, 1.0))
 
 
 def compute_mtf(sample_rate: int, segments: Iterable[tuple[float, Iterable[float]]]) -> tuple[dict[str, float], float | None]:
@@ -38,7 +40,6 @@ def compute_mtf(sample_rate: int, segments: Iterable[tuple[float, Iterable[float
             scores[f"{mod_rate:.0f}"] = 0.0
             continue
         envelope = np.abs(hilbert(data))
-        envelope -= np.mean(envelope)
         score = _normalized_depth(envelope, sample_rate, mod_rate)
         scores[f"{mod_rate:.0f}"] = round(score, 4)
     passed = max(
