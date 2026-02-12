@@ -13,6 +13,15 @@ def _am_signal(mod_rate: float, sample_rate: int, seconds: float) -> list[float]
     return (carrier * envelope).astype(np.float32).tolist()
 
 
+def _attenuated_am_signal(mod_rate: float, sample_rate: int, seconds: float) -> list[float]:
+    """Generate weakly modulated AM samples to simulate low transfer depth."""
+
+    t = np.arange(int(sample_rate * seconds)) / sample_rate
+    carrier = np.sin(2 * np.pi * 1000 * t)
+    envelope = 1 + 0.05 * np.sin(2 * np.pi * mod_rate * t)
+    return (carrier * envelope).astype(np.float32).tolist()
+
+
 def test_mtf_analysis_detects_modulation(client: TestClient) -> None:
     """MTF endpoint should report strong depth at commanded rates."""
 
@@ -26,6 +35,18 @@ def test_mtf_analysis_detects_modulation(client: TestClient) -> None:
     data = response.json()
     assert float(data["mtf_scores"]["40"]) > 0.6
     assert data["passed_hz"] == 90.0
+
+
+def test_mtf_analysis_rejects_weak_modulation(client: TestClient) -> None:
+    """MTF endpoint should not pass rates when modulation depth is severely attenuated."""
+
+    sample_rate = 48000
+    segments = [{"mod_rate_hz": 40.0, "samples": _attenuated_am_signal(40.0, sample_rate, 0.5)}]
+    response = client.post("/hardware/analyze/mtf", json={"sample_rate_hz": sample_rate, "segments": segments})
+    assert response.status_code == 200
+    data = response.json()
+    assert float(data["mtf_scores"]["40"]) < 0.6
+    assert data["passed_hz"] is None
 
 
 def test_latency_endpoint_returns_mean_and_jitter(client: TestClient) -> None:
